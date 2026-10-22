@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}KLU Store - Official Products{% endblock %}
+
+{% block content %}
+<div class="container mt-5 mb-5">
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <h2><i class="fas fa-store"></i> Official KLU Store</h2>
+            <p class="text-muted">Exclusive official college merchandise and approved products</p>
+        </div>
+        <div class="col-md-6 text-right">
+            {% if current_user.is_authenticated and current_user.role == "admin" %}
+                <a href="{{ url_for('admin_store.manage') }}" class="btn btn-primary"><i class="fas fa-cog"></i> Manage Store</a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Search and Filter -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" class="form-inline">
+                <input type="text" name="search" class="form-control mr-2" placeholder="Search products..." value="{{ search or '' }}">
+                
+                <select name="category" class="form-control mr-2">
+                    <option value="">All Categories</option>
+                    {% for category in categories %}
+                        <option value="{{ category }}" {% if category == current_category %}selected{% endif %}>{{ category }}</option>
+                    {% endfor %}
+                </select>
+
+                <button type="submit" class="btn btn-primary mr-2">
+                    <i class="fas fa-search"></i> Search
+                </button>
+                
+                {% if search or current_category %}
+                    <a href="{{ url_for('admin_store.browse') }}" class="btn btn-secondary">Clear</a>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    <!-- Products Grid -->
+    {% if products.items %}
+        <div class="row">
+            {% for product in products.items %}
+                <div class="col-md-4 col-lg-3 mb-4">
+                    <div class="card h-100 shadow-sm hover-shadow">
+                        <div class="card-img-top" style="height: 250px; overflow: hidden;">
+                            <img src="{{ product.image_url }}" alt="{{ product.title }}" class="img-fluid" style="width: 100%; height: 100%; object-fit: cover;">
+                        </div>
+                        <div class="card-body">
+                            <h5 class="card-title">{{ product.title }}</h5>
+                            <p class="card-text text-muted small">{{ product.description[:60] }}...</p>
+                            <p class="text-muted small"><strong>Category:</strong> {{ product.category }}</p>
+                            <p class="card-text"><strong>₹{{ "%.2f"|format(product.price|float) }}</strong></p>
+                            
+                            <div class="mb-3">
+                                {% if product.stock > 0 %}
+                                    <span class="badge badge-success">In Stock ({{ product.stock }})</span>
+                                {% else %}
+                                    <span class="badge badge-danger">Out of Stock</span>
+                                {% endif %}
+                            </div>
+
+                            <a href="{{ url_for('admin_store.detail', product_id=product.id) }}" class="btn btn-primary btn-sm btn-block">View Details</a>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+
+        <!-- Pagination -->
+        {% if products.pages > 1 %}
+            <nav aria-label="Page navigation">
+                <ul class="pagination justify-content-center">
+                    {% if products.has_prev %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('admin_store.browse', page=products.prev_num, search=search, category=current_category) }}">Previous</a>
+                        </li>
+                    {% endif %}
+
+                    {% for page_num in products.iter_pages() %}
+                        {% if page_num %}
+                            {% if page_num == products.page %}
+                                <li class="page-item active">
+                                    <span class="page-link">{{ page_num }}</span>
+                                </li>
+                            {% else %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('admin_store.browse', page=page_num, search=search, category=current_category) }}">{{ page_num }}</a>
+                                </li>
+                            {% endif %}
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if products.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('admin_store.browse', page=products.next_num, search=search, category=current_category) }}">Next</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        {% endif %}
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            <i class="fas fa-info-circle"></i>
+            No products found.
+            <a href="{{ url_for('admin_store.browse') }}" class="alert-link">View all products</a>
+        </div>
+    {% endif %}
+</div>
+
+<style>
+    .hover-shadow:hover {
+        box-shadow: 0 8px 16px rgba(0,0,0,0.1) !important;
+        transform: translateY(-2px);
+        transition: all 0.3s ease;
+    }
+</style>
+{% endblock %}

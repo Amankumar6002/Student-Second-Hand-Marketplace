@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}Payment Successful - Student Marketplace{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <i class="fas fa-check-circle text-success" style="font-size: 4rem;"></i>
+                    <h2 class="mt-3 text-success">Payment Successful!</h2>
+                    <p class="text-muted">Your order has been confirmed</p>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Order Confirmation</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <p class="text-muted mb-1">Order Number</p>
+                            <h6>{{ order.order_number }}</h6>
+                        </div>
+                        <div class="col-6">
+                            <p class="text-muted mb-1">Order Date</p>
+                            <h6>{{ order.created_at.strftime('%d %b %Y') }}</h6>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <p class="text-muted mb-1">Payment Method</p>
+                            <h6>{{ order.payment_method }}</h6>
+                        </div>
+                        <div class="col-6">
+                            <p class="text-muted mb-1">Status</p>
+                            <h6><span class="badge badge-success">{{ order.status.upper() }}</span></h6>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    {% if order.product %}
+                        <h6 class="mb-3"><strong>Product Details</strong></h6>
+                        <div class="row">
+                            <div class="col-3">
+                                <img src="{{ order.product.image_url }}" alt="{{ order.product.title }}" class="img-fluid rounded">
+                            </div>
+                            <div class="col-9">
+                                <p class="mb-1"><strong>{{ order.product.title }}</strong></p>
+                                <p class="text-muted small mb-1">{{ order.product.description[:80] }}...</p>
+                                <p class="text-muted small"><strong>Seller:</strong> {{ order.product.seller.name }}</p>
+                            </div>
+                        </div>
+                    {% else %}
+                        <h6 class="mb-3"><strong>Product Details</strong></h6>
+                        <div class="row">
+                            <div class="col-3">
+                                <img src="{{ order.admin_product.image_url }}" alt="{{ order.admin_product.title }}" class="img-fluid rounded">
+                            </div>
+                            <div class="col-9">
+                                <p class="mb-1"><strong>{{ order.admin_product.title }}</strong></p>
+                                <p class="text-muted small mb-1">{{ order.admin_product.description[:80] }}...</p>
+                                <p class="text-muted small"><span class="badge badge-info">Official KLU Store</span></p>
+                            </div>
+                        </div>
+                    {% endif %}
+
+                    <hr>
+
+                    <h6 class="mb-3"><strong>Price Breakdown</strong></h6>
+                    <div class="row mb-2">
+                        <div class="col-8">Product Price</div>
+                        <div class="col-4 text-right">₹{{ "%.2f"|format(order.product_price|float) }}</div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-8">GST (18%)</div>
+                        <div class="col-4 text-right">+ ₹{{ "%.2f"|format(order.gst_amount|float) }}</div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-8">Platform Fee (5%)</div>
+                        <div class="col-4 text-right">+ ₹{{ "%.2f"|format(order.platform_fee|float) }}</div>
+                    </div>
+                    {% if order.delivery_fee > 0 %}
+                        <div class="row mb-2">
+                            <div class="col-8">Delivery Fee</div>
+                            <div class="col-4 text-right">+ ₹{{ "%.2f"|format(order.delivery_fee|float) }}</div>
+                        </div>
+                    {% endif %}
+                    <hr>
+                    <div class="row">
+                        <div class="col-8"><strong>Total Amount</strong></div>
+                        <div class="col-4 text-right"><strong>₹{{ "%.2f"|format(order.total_amount|float) }}</strong></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <div class="alert alert-info">
+                    <p class="mb-0">
+                        <i class="fas fa-info-circle"></i>
+                        A confirmation email has been sent to {{ current_user.university_email }}
+                    </p>
+                </div>
+
+                <a href="{{ url_for('payments.my_orders') }}" class="btn btn-primary btn-lg btn-block">View My Orders</a>
+                <a href="{{ url_for('products.home') }}" class="btn btn-secondary btn-block mt-2">Continue Shopping</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

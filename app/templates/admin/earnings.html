@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Earnings - Student Marketplace{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-5 mb-5">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h2>Admin Earnings Report</h2>
+            <p class="text-muted">Track all earnings from GST, platform fees, and rental commissions</p>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center bg-light">
+                <div class="card-body">
+                    <h6 class="text-muted">Total Earnings</h6>
+                    <h3 class="text-primary">₹{{ "%.2f"|format(stats.total_earnings) }}</h3>
+                    <small>All sources</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-light">
+                <div class="card-body">
+                    <h6 class="text-muted">Platform Fees</h6>
+                    <h3 class="text-info">₹{{ "%.2f"|format(stats.platform_fees) }}</h3>
+                    <small>5% from all purchases</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-light">
+                <div class="card-body">
+                    <h6 class="text-muted">GST Collected</h6>
+                    <h3 class="text-warning">₹{{ "%.2f"|format(stats.gst) }}</h3>
+                    <small>18% tax collected</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-light">
+                <div class="card-body">
+                    <h6 class="text-muted">Total Records</h6>
+                    <h3 class="text-success">{{ stats.record_count }}</h3>
+                    <small>Earnings transactions</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Earnings Records Table -->
+    <div class="card">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">All Earnings Records</h5>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Order ID</th>
+                        <th>Transaction Type</th>
+                        <th>Platform Fee</th>
+                        <th>GST Amount</th>
+                        <th>Rental Commission</th>
+                        <th>Total Earnings</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in earnings.items %}
+                        <tr>
+                            <td>
+                                <a href="{{ url_for('orders.admin_order_detail', order_id=record.order_id) }}">
+                                    <strong>#{{ record.order_id }}</strong>
+                                </a>
+                            </td>
+                            <td>
+                                {% if record.transaction_type == "purchase" %}
+                                    <span class="badge badge-info">Purchase</span>
+                                {% else %}
+                                    <span class="badge badge-secondary">Rental</span>
+                                {% endif %}
+                            </td>
+                            <td>₹{{ "%.2f"|format(record.platform_fee|float) }}</td>
+                            <td>₹{{ "%.2f"|format(record.gst_amount|float) }}</td>
+                            <td>₹{{ "%.2f"|format(record.rental_commission|float) }}</td>
+                            <td><strong>₹{{ "%.2f"|format(record.total_earnings|float) }}</strong></td>
+                            <td>{{ record.created_at.strftime('%d %b %Y, %H:%M') }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if earnings.pages > 1 %}
+            <div class="card-footer">
+                <nav aria-label="Page navigation">
+                    <ul class="pagination justify-content-center mb-0">
+                        {% if earnings.has_prev %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('admin.earnings', page=earnings.prev_num) }}">Previous</a>
+                            </li>
+                        {% endif %}
+
+                        {% for page_num in earnings.iter_pages() %}
+                            {% if page_num %}
+                                {% if page_num == earnings.page %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ page_num }}</span>
+                                    </li>
+                                {% else %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('admin.earnings', page=page_num) }}">{{ page_num }}</a>
+                                    </li>
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+
+                        {% if earnings.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('admin.earnings', page=earnings.next_num) }}">Next</a>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="mt-4">
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary">Back to Dashboard</a>
+    </div>
+</div>
+{% endblock %}

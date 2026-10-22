@@ -1,0 +1,42 @@
+{% extends 'base.html' %}{% block title %}{{ product.title }} | KLU Marketplace{% endblock %}{% block content %}<section class="container detail-page"><div><div class="detail-image"><img src="{{ product.image_url }}" alt="{{ product.title }}"></div>{% if product.images|length > 1 %}<div class="detail-gallery">{% for image in product.images %}<img src="{{ image.image_path }}" alt="{{ product.title }} photo {{ loop.index }}">{% endfor %}</div>{% endif %}</div><div class="detail-copy"><p class="eyebrow">{{ product.category.name }} · {{ product.condition }}</p><h1>{{ product.title }}</h1><p class="seller-line"><i class="fa-solid fa-circle-check"></i> {{ product.seller.name }} · {{ product.location }} {% if product.seller.is_verified %}<span class="verified">Verified student</span>{% endif %}</p><div class="detail-price">{% if product.price %}<strong>₹{{ product.price }}</strong>{% endif %}{% if product.rental_price %}<span>₹{{ product.rental_price }} / day to rent</span>{% endif %}</div><p class="detail-description">{{ product.description }}</p><div class="availability"><strong>Availability</strong><span>{{ product.availability or 'Coordinate a handover with the seller' }}</span></div><div class="detail-actions">{% if current_user.is_authenticated and current_user.id != product.seller_id %}{% if product.listing_type in ['sale','both'] %}<form method="post" action="{{ url_for('products.buy', product_id=product.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-ink">Buy / request item</button></form>{% endif %}{% if product.listing_type in ['rent','both'] %}<a class="btn btn-outline" href="{{ url_for('rentals.rent', product_id=product.id) }}">Request a rental</a>{% endif %}<a class="btn btn-quiet" href="{{ url_for('messages.conversation', user_id=product.seller_id, product_id=product.id) }}">Contact seller</a>{% endif %}<form method="post" action="{{ url_for('products.wishlist', product_id=product.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-quiet">♡ Save</button></form></div><details class="report-box"><summary>Report this listing</summary><form method="post" action="{{ url_for('products.report', product_id=product.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><select name="reason"><option>Suspicious listing</option><option>Incorrect information</option><option>Inappropriate content</option></select><textarea name="description" placeholder="Tell us what looks wrong"></textarea><button class="btn btn-quiet">Submit report</button></form></details></div>
+<div class="card soft-card mt-5">
+  <div class="card-body">
+    <h3>⭐ Product Rating</h3>
+    <p>{{ '%.1f'|format(review_summary.average) }}/5 · {{ review_summary.count }} reviews</p>
+    <div class="review-distribution">
+      {% for star in [5,4,3,2,1] %}
+      <div class="distribution-row">
+        <span>{{ star }}★</span>
+        <div class="distribution-bar"><span style="width: {{ (review_summary.distribution[star] / review_summary.count * 100) if review_summary.count else 0 }}%"></span></div>
+        <strong>{{ review_summary.distribution[star] }}</strong>
+      </div>
+      {% endfor %}
+    </div>
+    {% if current_user.is_authenticated and can_review_product %}
+    <form method="post" action="{{ url_for('products.submit_product_review', product_id=product.id) }}" enctype="multipart/form-data" class="review-form mt-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="mb-3"><label>Rating</label><select name="rating" class="form-select" required><option value="5">5 - Excellent</option><option value="4">4 - Good</option><option value="3">3 - Average</option><option value="2">2 - Poor</option><option value="1">1 - Very Poor</option></select></div>
+      <div class="mb-3"><label>Review</label><textarea name="comment" rows="4" required></textarea></div>
+      <div class="mb-3"><label>Optional photo</label><input type="file" name="photo" accept="image/png,image/jpeg,image/webp"></div>
+      <button type="submit" class="btn btn-ink">Submit review</button>
+    </form>
+    {% elif current_user.is_authenticated %}
+    <p class="muted mt-3">Complete a purchase to leave a review.</p>
+    {% endif %}
+    <div class="reviews-list mt-4">
+      {% for review in reviews %}
+      <article class="review-item">
+        <div class="review-header"><div><strong>{{ '★' * review.rating }}{{ '☆' * (5 - review.rating) }}</strong><p class="mb-0">"{{ review.comment }}"</p></div><span class="muted">{{ review.created_at.strftime('%d %b %Y') }}</span></div>
+        <div class="review-meta"><span>— {{ review.reviewer.name }}</span>{% if current_user.is_authenticated %}<form method="post" action="{{ url_for('products.report_review', review_type='product', review_id=review.id) }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="reason" value="Inappropriate">
+          <button type="submit" class="link-btn">Report</button>
+        </form>{% endif %}</div>
+      </article>
+      {% else %}
+      <div class="empty-state">No reviews yet.</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+</section>{% endblock %}

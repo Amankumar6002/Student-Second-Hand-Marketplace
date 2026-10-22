@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block title %}Order Details - Student Marketplace{% endblock %}
+
+{% block content %}
+<div class="container mt-5 mb-5">
+    <div class="row">
+        <div class="col-md-8">
+            <h2 class="mb-4">Order Details</h2>
+
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Order #{{ order.order_number }}</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-3">
+                            <p class="text-muted mb-1">Order Date</p>
+                            <h6>{{ order.created_at.strftime('%d %b %Y, %H:%M') }}</h6>
+                        </div>
+                        <div class="col-md-3">
+                            <p class="text-muted mb-1">Order Type</p>
+                            <h6>
+                                {% if order.order_type == "admin_store" %}
+                                    <span class="badge badge-info">Official KLU Store</span>
+                                {% else %}
+                                    <span class="badge badge-secondary">Student Marketplace</span>
+                                {% endif %}
+                            </h6>
+                        </div>
+                        <div class="col-md-3">
+                            <p class="text-muted mb-1">Payment Method</p>
+                            <h6>{{ order.payment_method }}</h6>
+                        </div>
+                        <div class="col-md-3">
+                            <p class="text-muted mb-1">Status</p>
+                            <h6>
+                                {% if order.status == "pending" %}
+                                    <span class="badge badge-warning">Pending</span>
+                                {% elif order.status == "paid" %}
+                                    <span class="badge badge-info">Paid</span>
+                                {% elif order.status == "delivered" %}
+                                    <span class="badge badge-primary">Delivered</span>
+                                {% elif order.status == "completed" %}
+                                    <span class="badge badge-success">Completed</span>
+                                {% endif %}
+                            </h6>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Product Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            {% if order.product %}
+                                <img src="{{ order.product.image_url }}" alt="{{ order.product.title }}" class="img-fluid rounded">
+                            {% else %}
+                                <img src="{{ order.admin_product.image_url }}" alt="{{ order.admin_product.title }}" class="img-fluid rounded">
+                            {% endif %}
+                        </div>
+                        <div class="col-md-9">
+                            {% if order.product %}
+                                <h5>{{ order.product.title }}</h5>
+                                <p class="text-muted">{{ order.product.description }}</p>
+                                <p>
+                                    <strong>Seller:</strong> <a href="{{ url_for('products.seller_profile', seller_id=order.product.seller.id) }}">{{ order.product.seller.name }}</a>
+                                </p>
+                            {% else %}
+                                <h5>{{ order.admin_product.title }}</h5>
+                                <p class="text-muted">{{ order.admin_product.description }}</p>
+                                <p><span class="badge badge-info">Official KLU Store Product</span></p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {% if payment %}
+                <div class="card mb-4">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">Payment Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p class="text-muted mb-1">Payment Method</p>
+                                <h6>{{ payment.payment_method }}</h6>
+                            </div>
+                            <div class="col-md-6">
+                                <p class="text-muted mb-1">Payment Status</p>
+                                <h6>
+                                    {% if payment.status == "pending" %}
+                                        <span class="badge badge-warning">Pending</span>
+                                    {% elif payment.status == "completed" %}
+                                        <span class="badge badge-success">Completed</span>
+                                    {% else %}
+                                        <span class="badge badge-danger">Failed</span>
+                                    {% endif %}
+                                </h6>
+                            </div>
+                        </div>
+                        {% if payment.transaction_id %}
+                            <p>
+                                <strong>Transaction ID:</strong> {{ payment.transaction_id }}
+                            </p>
+                        {% endif %}
+                        <p class="text-muted mb-0"><small>Payment Date: {{ payment.created_at.strftime('%d %b %Y, %H:%M') }}</small></p>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">Price Breakdown</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-2">
+                        <div class="col-8">Product Price</div>
+                        <div class="col-4 text-right">
+                            <strong>₹{{ "%.2f"|format(order.product_price|float) }}</strong>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="row mb-2">
+                        <div class="col-8">GST (18%)</div>
+                        <div class="col-4 text-right">
+                            <span class="text-success">+₹{{ "%.2f"|format(order.gst_amount|float) }}</span>
+                        </div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-8">Platform Fee (5%)</div>
+                        <div class="col-4 text-right">
+                            <span class="text-success">+₹{{ "%.2f"|format(order.platform_fee|float) }}</span>
+                        </div>
+                    </div>
+                    {% if order.delivery_fee > 0 %}
+                        <div class="row mb-2">
+                            <div class="col-8">Delivery Fee</div>
+                            <div class="col-4 text-right">
+                                <span class="text-success">+₹{{ "%.2f"|format(order.delivery_fee|float) }}</span>
+                            </div>
+                        </div>
+                    {% endif %}
+                    <hr>
+                    <div class="row">
+                        <div class="col-8">
+                            <h5>Total</h5>
+                        </div>
+                        <div class="col-4 text-right">
+                            <h5><span class="text-primary">₹{{ "%.2f"|format(order.total_amount|float) }}</span></h5>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info mt-3" role="alert">
+                        <small>
+                            <strong>GST (18%):</strong> ₹{{ "%.2f"|format(order.gst_amount|float) }} - Goes to Admin<br>
+                            <strong>Platform Fee (5%):</strong> ₹{{ "%.2f"|format(order.platform_fee|float) }} - Admin earnings<br>
+                            {% if order.delivery_fee > 0 %}
+                                <strong>Delivery:</strong> ₹{{ "%.2f"|format(order.delivery_fee|float) }} - Shipping
+                            {% endif %}
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <a href="{{ url_for('payments.my_orders') }}" class="btn btn-secondary btn-block mt-3">Back to Orders</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+{% block title %}Review Moderation{% endblock %}
+{% block content %}
+<section class="container mt-5 mb-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <p class="eyebrow">ADMIN MODERATION</p>
+      <h1>Reviews</h1>
+    </div>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-quiet">Back to dashboard</a>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card soft-card"><div class="card-body"><small>Product reviews</small><h3>{{ review_stats.product_reviews }}</h3></div></div></div>
+    <div class="col-md-3"><div class="card soft-card"><div class="card-body"><small>Seller reviews</small><h3>{{ review_stats.seller_reviews }}</h3></div></div></div>
+    <div class="col-md-3"><div class="card soft-card"><div class="card-body"><small>Reported reviews</small><h3>{{ review_stats.reported_reviews }}</h3></div></div></div>
+    <div class="col-md-3"><div class="card soft-card"><div class="card-body"><small>Avg product rating</small><h3>{{ '%.1f'|format(review_stats.product_avg) }}</h3></div></div></div>
+  </div>
+
+  <div class="card soft-card mb-4">
+    <div class="card-body">
+      <h3>Reported reviews</h3>
+      {% if reported_reviews %}
+        {% for report in reported_reviews %}
+        <div class="review-item mb-3">
+          <div class="review-header"><strong>{{ report.review_type|title }}</strong><span class="muted">{{ report.created_at.strftime('%d %b %Y') }}</span></div>
+          <p><strong>Reason:</strong> {{ report.reason }}</p>
+          {% if report.description %}<p>{{ report.description }}</p>{% endif %}
+          <p><strong>Reporter:</strong> {{ report.reporter.name }}</p>
+          <form method="post" action="{{ url_for('admin.remove_review', review_type=report.review_type, review_id=report.review_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-danger btn-sm">Remove review</button>
+          </form>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">No reports right now.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-md-6">
+      <div class="card soft-card">
+        <div class="card-body">
+          <h3>Product reviews</h3>
+          {% if product_reviews %}
+            {% for review in product_reviews %}
+            <div class="review-item mb-3">
+              <div class="review-header"><strong>{{ '★' * review.rating }}{{ '☆' * (5-review.rating) }}</strong><span class="muted">{{ review.created_at.strftime('%d %b %Y') }}</span></div>
+              <p>{{ review.comment }}</p>
+              <p>Reviewer: {{ review.reviewer.name }}</p>
+              <form method="post" action="{{ url_for('admin.remove_review', review_type='product', review_id=review.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-danger btn-sm">Remove</button>
+              </form>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="empty-state">No product reviews.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card soft-card">
+        <div class="card-body">
+          <h3>Seller reviews</h3>
+          {% if user_reviews %}
+            {% for review in user_reviews %}
+            <div class="review-item mb-3">
+              <div class="review-header"><strong>{{ '★' * review.rating }}{{ '☆' * (5-review.rating) }}</strong><span class="muted">{{ review.created_at.strftime('%d %b %Y') }}</span></div>
+              <p>{{ review.comment }}</p>
+              <p>Reviewer: {{ review.reviewer.name }} · Seller: {{ review.seller.name }}</p>
+              <form method="post" action="{{ url_for('admin.remove_review', review_type='seller', review_id=review.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-danger btn-sm">Remove</button>
+              </form>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="empty-state">No seller reviews.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

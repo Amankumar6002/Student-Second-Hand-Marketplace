@@ -1,0 +1,282 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin Dashboard - Student Marketplace{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-5 mb-5">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h1 class="mb-2">Admin Dashboard</h1>
+            <p class="text-muted">Monitor marketplace activity and earnings</p>
+        </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="mb-4">
+        <ul class="nav nav-tabs">
+            <li class="nav-item">
+                <a class="nav-link active" href="{{ url_for('admin.dashboard') }}">Overview</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('admin.earnings') }}">Earnings</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('admin.gst_report') }}">GST Report</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('admin.rental_commissions') }}">Rental Commission</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('admin.products') }}">Listings</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('admin.users') }}">Users</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('admin.reports') }}">Reports</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('admin.reviews') }}">Reviews</a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Key Statistics -->
+    <div class="row mb-4">
+        <div class="col-md-2">
+            <div class="card text-center border-primary">
+                <div class="card-body">
+                    <h6 class="text-muted">Total Users</h6>
+                    <h3 class="text-primary">{{ stats.users }}</h3>
+                    <small class="text-success">{{ stats.verified }} verified</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center border-success">
+                <div class="card-body">
+                    <h6 class="text-muted">Total Orders</h6>
+                    <h3 class="text-success">{{ stats.total_orders }}</h3>
+                    <small class="text-warning">{{ stats.pending_orders }} pending</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center border-info">
+                <div class="card-body">
+                    <h6 class="text-muted">Total Sales</h6>
+                    <h3 class="text-info">₹{{ "%.0f"|format(stats.total_sales) }}</h3>
+                    <small>Product Value</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center border-warning">
+                <div class="card-body">
+                    <h6 class="text-muted">GST Collected</h6>
+                    <h3 class="text-warning">₹{{ "%.0f"|format(stats.total_gst) }}</h3>
+                    <small>18% Tax</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center border-danger">
+                <div class="card-body">
+                    <h6 class="text-muted">Platform Fees</h6>
+                    <h3 class="text-danger">₹{{ "%.0f"|format(stats.total_platform_fees) }}</h3>
+                    <small>5% Commission</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center border-success">
+                <div class="card-body">
+                    <h6 class="text-muted">Rental Commission</h6>
+                    <h3 class="text-success">₹{{ "%.0f"|format(stats.total_rental_commission) }}</h3>
+                    <small>10% from Rentals</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Total Admin Earnings -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title">Total Admin Earnings</h5>
+                    <h2 class="text-success">₹{{ "%.2f"|format(stats.total_admin_earnings) }}</h2>
+                    <p class="text-muted mb-0">
+                        GST: ₹{{ "%.2f"|format(stats.total_gst) }} + 
+                        Platform Fees: ₹{{ "%.2f"|format(stats.total_platform_fees) }} + 
+                        Rental Commission: ₹{{ "%.2f"|format(stats.total_rental_commission) }}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Monthly Earnings Chart -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Monthly Earnings Summary (Last 12 Months)</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="earningsChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Marketplace Statistics -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Marketplace Stats</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-8">Total Listings</div>
+                        <div class="col-4 text-right"><strong>{{ stats.products }}</strong></div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-8">Pending Approval</div>
+                        <div class="col-4 text-right"><strong class="text-warning">{{ stats.pending }}</strong></div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-8">Open Reports</div>
+                        <div class="col-4 text-right"><strong class="text-danger">{{ stats.reports }}</strong></div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-8">Review Reports</div>
+                        <div class="col-4 text-right"><strong class="text-warning"><a href="{{ url_for('admin.reviews') }}">Open</a></strong></div>
+                    </div>
+                    <div class="row">
+                        <div class="col-8">Completed Orders</div>
+                        <div class="col-4 text-right"><strong class="text-success">{{ stats.completed_orders }}</strong></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Admin Store Stats</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted mb-3">Manage official KLU Store products and inventory</p>
+                    <a href="{{ url_for('admin_store.manage') }}" class="btn btn-primary btn-block mb-2">Manage KLU Store</a>
+                    <a href="{{ url_for('admin_store.add_product') }}" class="btn btn-success btn-block mb-2">Add New Product</a>
+                    <a href="{{ url_for('admin_store.browse') }}" class="btn btn-secondary btn-block">View Store</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Orders -->
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Recent Orders</h5>
+                </div>
+                <div class="table-responsive">
+                    <table class="table mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Order ID</th>
+                                <th>Customer</th>
+                                <th>Product</th>
+                                <th>Amount</th>
+                                <th>GST</th>
+                                <th>Date</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for order in recent_orders %}
+                                <tr>
+                                    <td>
+                                        <a href="{{ url_for('orders.admin_order_detail', order_id=order.id) }}">
+                                            <strong>{{ order.order_number }}</strong>
+                                        </a>
+                                    </td>
+                                    <td>{{ order.buyer.name }}</td>
+                                    <td>
+                                        {% if order.product %}
+                                            {{ order.product.title[:30] }}
+                                        {% else %}
+                                            {{ order.admin_product.title[:30] }}
+                                        {% endif %}
+                                    </td>
+                                    <td>₹{{ "%.2f"|format(order.product_price|float) }}</td>
+                                    <td>₹{{ "%.2f"|format(order.gst_amount|float) }}</td>
+                                    <td>{{ order.created_at.strftime('%d %b %Y') }}</td>
+                                    <td>
+                                        {% if order.status == "pending" %}
+                                            <span class="badge badge-warning">Pending</span>
+                                        {% elif order.status == "paid" %}
+                                            <span class="badge badge-info">Paid</span>
+                                        {% elif order.status == "delivered" %}
+                                            <span class="badge badge-primary">Delivered</span>
+                                        {% else %}
+                                            <span class="badge badge-success">Completed</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card-footer">
+                    <a href="{{ url_for('orders.admin_orders') }}" class="btn btn-sm btn-primary">View All Orders</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js for Monthly Earnings -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<script>
+    const earningsData = {
+        labels: [{% for month in monthly_earnings %}'{{ month.name }}'{{ "," if not loop.last else "" }}{% endfor %}],
+        datasets: [{
+            label: 'Monthly Admin Earnings (₹)',
+            data: [{% for month in monthly_earnings %}{{ month.total }}{{ "," if not loop.last else "" }}{% endfor %}],
+            borderColor: '#28a745',
+            backgroundColor: 'rgba(40, 167, 69, 0.1)',
+            tension: 0.1,
+            fill: true
+        }]
+    };
+
+    const ctx = document.getElementById('earningsChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: earningsData,
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: true,
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '₹' + value;
+                        }
+                    }
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

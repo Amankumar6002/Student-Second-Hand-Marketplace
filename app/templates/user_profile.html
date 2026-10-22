@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block title %}{{ seller.name }} | KLU Marketplace{% endblock %}
+{% block content %}
+<section class="container dashboard-page">
+  <div class="profile-head">
+    <div class="brand-mark">{{ seller.name[0] }}</div>
+    <div>
+      <p class="eyebrow">SELLER PROFILE</p>
+      <h1>{{ seller.name }}</h1>
+      <p class="muted">{{ seller.department }} · Section {{ seller.section }} · {% if seller.is_verified %}<span class="verified">Verified student</span>{% else %}<span>Verification pending</span>{% endif %}</p>
+    </div>
+  </div>
+
+  <div class="card soft-card mt-4">
+    <div class="card-body">
+      <h3>Seller Rating</h3>
+      <p>⭐ {{ '%.1f'|format(review_summary.average) }}/5</p>
+      <p>Based on {{ review_summary.count }} reviews</p>
+      <div class="review-distribution">
+        {% for star in [5,4,3,2,1] %}
+        <div class="distribution-row">
+          <span>{{ star }}★</span>
+          <div class="distribution-bar"><span style="width: {{ (review_summary.distribution[star] / review_summary.count * 100) if review_summary.count else 0 }}%"></span></div>
+          <strong>{{ review_summary.distribution[star] }}</strong>
+        </div>
+        {% endfor %}
+      </div>
+      {% if current_user.is_authenticated and current_user.id != seller.id %}
+      {% if can_review_seller %}
+      <form method="post" action="{{ url_for('products.submit_user_review', user_id=seller.id) }}" class="review-form mt-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="mb-3"><label>Rating</label><select name="rating" class="form-select" required><option value="5">5 - Excellent</option><option value="4">4 - Good</option><option value="3">3 - Average</option><option value="2">2 - Poor</option><option value="1">1 - Very Poor</option></select></div>
+        <div class="mb-3"><label>Review</label><textarea name="comment" rows="4" required></textarea></div>
+        <button type="submit" class="btn btn-ink">Submit seller review</button>
+      </form>
+      {% else %}
+      <p class="muted mt-3">Complete a purchase with this seller before leaving a review.</p>
+      {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="section-head mt-5">
+    <div><p class="eyebrow">LISTINGS</p><h2>{{ seller.name }}'s items</h2></div>
+  </div>
+  <div class="row g-4">
+    {% for product in listings %}
+      {% include 'products/_card.html' %}
+    {% else %}
+      <div class="empty-state">No listings yet.</div>
+    {% endfor %}
+  </div>
+
+  <div class="card soft-card mt-5">
+    <div class="card-body">
+      <h3>Seller reviews</h3>
+      {% for review in reviews %}
+      <article class="review-item">
+        <div class="review-header"><div><strong>{{ '★' * review.rating }}{{ '☆' * (5 - review.rating) }}</strong><p class="mb-0">"{{ review.comment }}"</p></div><span class="muted">{{ review.created_at.strftime('%d %b %Y') }}</span></div>
+        <div class="review-meta"><span>— {{ review.reviewer.name }}</span>
+          {% if current_user.is_authenticated %}
+          <form method="post" action="{{ url_for('products.report_review', review_type='seller', review_id=review.id) }}" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="reason" value="Inappropriate">
+            <button type="submit" class="link-btn">Report</button>
+          </form>
+          {% endif %}
+        </div>
+      </article>
+      {% else %}
+      <div class="empty-state">No seller reviews yet.</div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

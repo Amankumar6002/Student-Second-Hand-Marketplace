@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}My Orders - Student Marketplace{% endblock %}
+
+{% block content %}
+<div class="container mt-5 mb-5">
+    <h2 class="mb-4">My Orders</h2>
+
+    {% if orders.items %}
+        <div class="row mb-3">
+            <div class="col-md-12">
+                <p class="text-muted">Showing {{ (orders.page-1)*orders.per_page + 1 }} - {{ orders_end }} of {{ orders.total }} orders</p>
+            </div>
+        </div>
+
+        {% for order in orders.items %}
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-2">
+                            {% if order.product %}
+                                <img src="{{ order.product.image_url }}" alt="{{ order.product.title }}" class="img-fluid rounded">
+                            {% else %}
+                                <img src="{{ order.admin_product.image_url }}" alt="{{ order.admin_product.title }}" class="img-fluid rounded">
+                            {% endif %}
+                        </div>
+                        <div class="col-md-5">
+                            <h6 class="mb-1">
+                                Order #<strong>{{ order.order_number }}</strong>
+                            </h6>
+                            <p class="text-muted mb-2">
+                                {% if order.product %}
+                                    {{ order.product.title }}
+                                {% else %}
+                                    {{ order.admin_product.title }}
+                                {% endif %}
+                            </p>
+                            <small class="text-muted">Ordered on {{ order.created_at.strftime('%d %b %Y') }}</small>
+                        </div>
+                        <div class="col-md-2">
+                            <p class="mb-1"><strong>₹{{ "%.2f"|format(order.total_amount|float) }}</strong></p>
+                            <small class="text-muted d-block">
+                                {% if order.order_type == "admin_store" %}
+                                    KLU Store
+                                {% else %}
+                                    Marketplace
+                                {% endif %}
+                            </small>
+                            <small class="text-muted d-block">Payment: {{ order.payment_method or 'N/A' }}</small>
+                        </div>
+                        <div class="col-md-2">
+                            {% if order.status == "pending" %}
+                                <span class="badge badge-warning">Pending</span>
+                            {% elif order.status == "paid" %}
+                                <span class="badge badge-info">Paid</span>
+                            {% elif order.status == "delivered" %}
+                                <span class="badge badge-primary">Delivered</span>
+                            {% elif order.status == "completed" %}
+                                <span class="badge badge-success">Completed</span>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-1 text-right">
+                            <a href="{{ url_for('orders.order_detail', order_id=order.id) }}" class="btn btn-sm btn-info">View</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+
+        <!-- Pagination -->
+        {% if orders.pages > 1 %}
+            <nav aria-label="Page navigation">
+                <ul class="pagination justify-content-center">
+                    {% if orders.has_prev %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('orders.my_orders', page=orders.prev_num) }}">Previous</a>
+                        </li>
+                    {% endif %}
+
+                    {% for page_num in orders.iter_pages() %}
+                        {% if page_num %}
+                            {% if page_num == orders.page %}
+                                <li class="page-item active">
+                                    <span class="page-link">{{ page_num }}</span>
+                                </li>
+                            {% else %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('orders.my_orders', page=page_num) }}">{{ page_num }}</a>
+                                </li>
+                            {% endif %}
+                        {% else %}
+                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if orders.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('orders.my_orders', page=orders.next_num) }}">Next</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        {% endif %}
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            <i class="fas fa-info-circle"></i>
+            You haven't placed any orders yet.
+            <a href="{{ url_for('products.browse') }}" class="alert-link">Start Shopping</a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

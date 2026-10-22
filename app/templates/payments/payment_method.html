@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Payment Method - Student Marketplace{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Payment Method</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Order #{{ order.order_number }}</p>
+                    <hr>
+                    
+                    <form method="POST">
+                        <div class="list-group">
+                            <label class="list-group-item">
+                                <input class="form-check-input" type="radio" name="payment_method" value="UPI" required>
+                                <strong class="ms-2">UPI</strong>
+                                <small class="d-block text-muted ms-4">Pay using any UPI app (Google Pay, PhonePe, etc.)</small>
+                            </label>
+                            <label class="list-group-item">
+                                <input class="form-check-input" type="radio" name="payment_method" value="Debit Card" required>
+                                <strong class="ms-2">Debit Card</strong>
+                                <small class="d-block text-muted ms-4">Enter your debit card details</small>
+                            </label>
+                            <label class="list-group-item">
+                                <input class="form-check-input" type="radio" name="payment_method" value="Credit Card" required>
+                                <strong class="ms-2">Credit Card</strong>
+                                <small class="d-block text-muted ms-4">Enter your credit card details</small>
+                            </label>
+                            <label class="list-group-item">
+                                <input class="form-check-input" type="radio" name="payment_method" value="Net Banking" required>
+                                <strong class="ms-2">Net Banking</strong>
+                                <small class="d-block text-muted ms-4">Direct transfer from your bank account</small>
+                            </label>
+                            {% if "Cash on Delivery" in order.payment_method or order.order_type == "admin_store" %}
+                                <label class="list-group-item">
+                                    <input class="form-check-input" type="radio" name="payment_method" value="Cash on Delivery" required>
+                                    <strong class="ms-2">Cash on Delivery</strong>
+                                    <small class="d-block text-muted ms-4">Pay when you receive the delivery</small>
+                                </label>
+                            {% endif %}
+                        </div>
+
+                        <div class="mt-4 alert alert-info">
+                            <strong>Total Amount:</strong> ₹{{ "%.2f"|format(order.total_amount|float) }}
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-lg btn-block">Proceed to Payment</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .list-group-item {
+        cursor: pointer;
+    }
+    .list-group-item:hover {
+        background-color: #f0f0f0;
+    }
+</style>
+{% endblock %}

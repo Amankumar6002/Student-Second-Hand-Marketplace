@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Checkout - Student Marketplace{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row">
+        <div class="col-md-8">
+            <h2 class="mb-4">Checkout</h2>
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Order Summary</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <img src="{{ item.image_url }}" alt="{{ item.title }}" class="img-fluid rounded">
+                        </div>
+                        <div class="col-md-9">
+                            <h5>{{ item.title }}</h5>
+                            <p class="text-muted">{{ item.description[:100] }}...</p>
+                            {% if item_type == "admin" %}
+                                <p><strong>Official KLU Store Item</strong> <span class="badge bg-info text-dark">Official</span></p>
+                            {% else %}
+                                <p><strong>Seller:</strong> {{ item.seller.name }}</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Select Payment Method</h5>
+                </div>
+                <div class="card-body">
+                    {% if razorpay_ready %}
+                        <div class="alert alert-info">
+                            Secure checkout with Razorpay Test Mode is ready. No secret key is exposed in the browser.
+                        </div>
+                        <button id="razorpay-button" class="btn btn-primary btn-lg">Pay with Razorpay</button>
+                        <a href="{{ url_for('products.detail', product_id=item.id if item_type == 'product' else item.id) }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+                    {% else %}
+                        <form method="POST">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <div class="list-group">
+                                {% for method in payment_methods %}
+                                    <label class="list-group-item">
+                                        <input class="form-check-input" type="radio" name="payment_method" value="{{ method }}" required>
+                                        <strong>{{ method }}</strong>
+                                        {% if method == "Razorpay" %}
+                                            <small class="d-block text-muted">Secure online payment via Razorpay Test Mode</small>
+                                        {% elif method == "Cash on Delivery" %}
+                                            <small class="d-block text-muted">Pay when you receive the item</small>
+                                        {% endif %}
+                                    </label>
+                                {% endfor %}
+                            </div>
+                            <div class="mt-4">
+                                <button type="submit" class="btn btn-primary btn-lg btn-block">Continue to Payment</button>
+                            </div>
+                        </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">Price Details</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-2">
+                        <div class="col-8"><p class="mb-0">Product Price</p></div>
+                        <div class="col-4 text-right"><p class="mb-0"><strong>₹{{ "%.2f"|format(totals.product_price|float) }}</strong></p></div>
+                    </div>
+                    <hr>
+                    <div class="row mb-2">
+                        <div class="col-8"><p class="mb-0">GST (18%)</p></div>
+                        <div class="col-4 text-right"><p class="mb-0"><span class="text-success">+₹{{ "%.2f"|format(totals.gst_amount|float) }}</span></p></div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-8"><p class="mb-0">Platform Fee (5%)</p></div>
+                        <div class="col-4 text-right"><p class="mb-0"><span class="text-success">+₹{{ "%.2f"|format(totals.platform_fee|float) }}</span></p></div>
+                    </div>
+                    {% if totals.delivery_fee > 0 %}
+                    <div class="row mb-2">
+                        <div class="col-8"><p class="mb-0">Delivery Fee</p></div>
+                        <div class="col-4 text-right"><p class="mb-0"><span class="text-success">+₹{{ "%.2f"|format(totals.delivery_fee|float) }}</span></p></div>
+                    </div>
+                    {% endif %}
+                    <hr>
+                    <div class="row">
+                        <div class="col-8"><h5>Total Amount</h5></div>
+                        <div class="col-4 text-right"><h5><span class="text-primary">₹{{ "%.2f"|format(totals.total_amount|float) }}</span></h5></div>
+                    </div>
+                    <p class="small text-muted mt-3"><i class="fas fa-info-circle"></i> GST and platform fees are included in the total amount.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if razorpay_ready %}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+    const razorpayOptions = {
+        key: "{{ razorpay_key_id }}",
+        amount: "{{ razorpay_amount }}",
+        currency: "{{ razorpay_currency }}",
+        name: "Kalasalingam Student Marketplace",
+        description: "{{ item.title }}",
+        order_id: "{{ razorpay_order_id }}",
+        handler: function (response) {
+            fetch("{{ url_for('payments.verify_payment') }}", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": "{{ csrf_token() }}"
+                },
+                body: JSON.stringify({
+                    razorpay_payment_id: response.razorpay_payment_id,
+                    razorpay_order_id: response.razorpay_order_id,
+                    razorpay_signature: response.razorpay_signature,
+                    order_id: "{{ order.id }}"
+                })
+            }).then(async function (res) {
+                const data = await res.json();
+                if (res.ok && data.status === "success") {
+                    window.location.href = data.redirect_url;
+                    return;
+                }
+                alert(data.message || "Payment verification failed.");
+                window.location.href = "{{ url_for('payments.payment_cancel', order_id=order.id) }}";
+            }).catch(function () {
+                alert("Something went wrong while verifying the payment.");
+                window.location.href = "{{ url_for('payments.payment_cancel', order_id=order.id) }}";
+            });
+        },
+        prefill: {
+            name: "{{ current_user.name }}",
+            email: "{{ current_user.university_email }}"
+        },
+        theme: {
+            color: "#0d6efd"
+        },
+        modal: {
+            ondismiss: function () {
+                window.location.href = "{{ url_for('payments.payment_cancel', order_id=order.id) }}";
+            }
+        }
+    };
+
+    document.getElementById("razorpay-button").addEventListener("click", function () {
+        const rzp = new Razorpay(razorpayOptions);
+        rzp.open();
+    });
+</script>
+{% endif %}
+
+<style>
+    .list-group-item { cursor: pointer; transition: all 0.3s; }
+    .list-group-item:hover { background-color: #f0f0f0; }
+    .list-group-item input[type="radio"]:checked { background-color: #e7f3ff; border-color: #007bff; }
+</style>
+{% endblock %}

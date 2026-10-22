@@ -1,0 +1,40 @@
+{% extends 'base.html' %}{% block title %}My profile | KLU Marketplace{% endblock %}{% block content %}
+<section class="container dashboard-page">
+  <div class="profile-head">
+    <div class="brand-mark">{{ current_user.name[0] }}</div>
+    <div>
+      <p class="eyebrow">YOUR CAMPUS PROFILE</p>
+      <h1>{{ current_user.name }}</h1>
+      <p class="muted">{{ current_user.department }} · Section {{ current_user.section }} · <span class="verified">{{ 'Verified student' if current_user.is_verified else 'Verification pending' }}</span></p>
+    </div>
+  </div>
+  <div class="stat-grid">
+    <div class="stat-card"><small>My listings</small><strong>{{ listings|length }}</strong></div>
+    <div class="stat-card"><small>Saved items</small><strong>{{ wishlist|length }}</strong></div>
+    <div class="stat-card"><small>My rentals</small><strong>{{ rentals|length }}</strong></div>
+    <div class="stat-card"><small>Purchases</small><strong>{{ transactions|length }}</strong></div>
+  </div>
+  <div class="card soft-card mt-4">
+    <div class="card-body">
+      <h3>Seller Rating</h3>
+      <p>⭐ {{ '%.1f'|format(review_summary.average) }}/5</p>
+      <p>Based on {{ review_summary.count }} reviews</p>
+      <div class="review-distribution">
+        {% for star in [5,4,3,2,1] %}
+        <div class="distribution-row">
+          <span>{{ star }}★</span>
+          <div class="distribution-bar"><span style="width: {{ (review_summary.distribution[star] / review_summary.count * 100) if review_summary.count else 0 }}%"></span></div>
+          <strong>{{ review_summary.distribution[star] }}</strong>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="section-head mt-5">
+    <div><p class="eyebrow">YOUR LISTINGS</p><h2>Items you’ve passed on.</h2></div>
+    <a class="btn btn-ink" href="{{ url_for('products.create') }}">List an item</a>
+  </div>
+  <div class="row g-4">
+    {% for product in listings %}{% include 'products/_card.html' %}{% else %}<div class="empty-state">You have not listed anything yet.</div>{% endfor %}
+  </div>
+</section>{% endblock %}

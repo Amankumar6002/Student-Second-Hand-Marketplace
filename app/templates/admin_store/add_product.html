@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Add Product - KLU Store Admin{% endblock %}
+
+{% block content %}
+<div class="container mt-5 mb-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <h2 class="mb-4">Add New Product to KLU Store</h2>
+
+            <div class="card">
+                <div class="card-body">
+                    {% if get_flashed_messages() %}
+                        {% with messages = get_flashed_messages(with_categories=true) %}
+                            {% if messages %}
+                                {% for category, message in messages %}
+                                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                                        {{ message }}
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                    </div>
+                                {% endfor %}
+                            {% endif %}
+                        {% endwith %}
+                    {% endif %}
+
+                    <form method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="form-group mb-3">
+                            <label for="title"><strong>Product Name</strong></label>
+                            <input type="text" id="title" name="title" class="form-control" placeholder="e.g., College T-Shirt" required>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label for="description"><strong>Description</strong></label>
+                            <textarea id="description" name="description" class="form-control" rows="4" placeholder="Detailed product description" required></textarea>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label for="category"><strong>Category</strong></label>
+                            <input type="text" id="category" name="category" class="form-control" placeholder="e.g., Apparel, Stationery, Accessories" required>
+                            <small class="form-text text-muted">Enter category name (e.g., Apparel, Stationery, Electronics, etc.)</small>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+                                    <label for="price"><strong>Price (₹)</strong></label>
+                                    <input type="number" id="price" name="price" class="form-control" placeholder="500" step="0.01" min="0" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+                                    <label for="stock"><strong>Stock Quantity</strong></label>
+                                    <input type="number" id="stock" name="stock" class="form-control" placeholder="100" min="0" required>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group mb-4">
+                            <label for="image"><strong>Product Image</strong></label>
+                            <input type="file" id="image" name="image" class="form-control-file" accept="image/*">
+                            <small class="form-text text-muted">Supported formats: PNG, JPG, JPEG, GIF, WebP (Max 5MB)</small>
+                        </div>
+
+                        <!-- Price Breakdown Preview -->
+                        <div class="alert alert-info" role="alert">
+                            <h6><strong>Price Breakdown Example (for reference):</strong></h6>
+                            <small>
+                                When a customer buys at the entered price:<br>
+                                <strong>Product Price:</strong> ₹<span id="price_display">500.00</span><br>
+                                <strong>GST (18%):</strong> ₹<span id="gst_display">90.00</span><br>
+                                <strong>Platform Fee (5%):</strong> ₹<span id="fee_display">25.00</span><br>
+                                <strong>Delivery Fee:</strong> ₹50.00<br>
+                                <strong style="color: #ff6b00;">Total Customer Pays:</strong> ₹<span id="total_display">715.00</span><br>
+                                <small style="color: #28a745;"><strong>Admin Earnings:</strong> ₹<span id="earnings_display">165.00</span> (GST + Platform Fee)</small>
+                            </small>
+                        </div>
+
+                        <div class="form-group">
+                            <button type="submit" class="btn btn-success btn-lg btn-block">
+                                <i class="fas fa-plus"></i> Add Product
+                            </button>
+                            <a href="{{ url_for('admin_store.manage') }}" class="btn btn-secondary btn-block mt-2">Cancel</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('price').addEventListener('input', function() {
+        const price = parseFloat(this.value) || 0;
+        const gst = price * 0.18;
+        const fee = price * 0.05;
+        const delivery = 50;
+        const total = price + gst + fee + delivery;
+        const earnings = gst + fee;
+
+        document.getElementById('price_display').textContent = price.toFixed(2);
+        document.getElementById('gst_display').textContent = gst.toFixed(2);
+        document.getElementById('fee_display').textContent = fee.toFixed(2);
+        document.getElementById('total_display').textContent = total.toFixed(2);
+        document.getElementById('earnings_display').textContent = earnings.toFixed(2);
+    });
+
+    // Initialize on load
+    document.getElementById('price').dispatchEvent(new Event('input'));
+</script>
+{% endblock %}

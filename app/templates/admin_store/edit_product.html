@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Product - KLU Store Admin{% endblock %}
+
+{% block content %}
+<div class="container mt-5 mb-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <h2 class="mb-4">Edit Product: {{ product.title }}</h2>
+
+            <div class="card">
+                <div class="card-body">
+                    {% if get_flashed_messages() %}
+                        {% with messages = get_flashed_messages(with_categories=true) %}
+                            {% if messages %}
+                                {% for category, message in messages %}
+                                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                                        {{ message }}
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                    </div>
+                                {% endfor %}
+                            {% endif %}
+                        {% endwith %}
+                    {% endif %}
+
+                    <form method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="form-group mb-3">
+                            <label for="title"><strong>Product Name</strong></label>
+                            <input type="text" id="title" name="title" class="form-control" value="{{ product.title }}" required>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label for="description"><strong>Description</strong></label>
+                            <textarea id="description" name="description" class="form-control" rows="4" required>{{ product.description }}</textarea>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label for="category"><strong>Category</strong></label>
+                            <input type="text" id="category" name="category" class="form-control" value="{{ product.category }}" required>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+                                    <label for="price"><strong>Price (₹)</strong></label>
+                                    <input type="number" id="price" name="price" class="form-control" value="{{ product.price }}" step="0.01" min="0">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+                                    <label for="stock"><strong>Stock Quantity</strong></label>
+                                    <input type="number" id="stock" name="stock" class="form-control" value="{{ product.stock }}" min="0">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label for="image"><strong>Update Product Image</strong></label>
+                            {% if product.image_path %}
+                                <div class="mb-3">
+                                    <p class="text-muted">Current Image:</p>
+                                    <img src="/static/{{ product.image_path }}" alt="{{ product.title }}" class="img-thumbnail" style="max-width: 200px;">
+                                </div>
+                            {% endif %}
+                            <input type="file" id="image" name="image" class="form-control-file" accept="image/*">
+                            <small class="form-text text-muted">Leave empty to keep current image</small>
+                        </div>
+
+                        <!-- Price Breakdown Preview -->
+                        <div class="alert alert-info" role="alert">
+                            <h6><strong>Price Breakdown Example (current price):</strong></h6>
+                            <small>
+                                When a customer buys at the current price:<br>
+                                <strong>Product Price:</strong> ₹<span id="price_display">{{ product.price }}</span><br>
+                                <strong>GST (18%):</strong> ₹<span id="gst_display">{{ (product.price * 18 / 100)|round(2) }}</span><br>
+                                <strong>Platform Fee (5%):</strong> ₹<span id="fee_display">{{ (product.price * 5 / 100)|round(2) }}</span><br>
+                                <strong>Delivery Fee:</strong> ₹50.00<br>
+                                <strong style="color: #ff6b00;">Total Customer Pays:</strong> ₹<span id="total_display">{{ ((product.price * 123 / 100) + 50)|round(2) }}</span><br>
+                                <small style="color: #28a745;"><strong>Admin Earnings:</strong> ₹<span id="earnings_display">{{ ((product.price * 18 / 100) + (product.price * 5 / 100))|round(2) }}</span> (GST + Platform Fee)</small>
+                            </small>
+                        </div>
+
+                        <div class="form-group">
+                            <button type="submit" class="btn btn-primary btn-lg btn-block">
+                                <i class="fas fa-save"></i> Update Product
+                            </button>
+                            <a href="{{ url_for('admin_store.manage') }}" class="btn btn-secondary btn-block mt-2">Cancel</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('price').addEventListener('input', function() {
+        const price = parseFloat(this.value) || 0;
+        const gst = price * 0.18;
+        const fee = price * 0.05;
+        const delivery = 50;
+        const total = price + gst + fee + delivery;
+        const earnings = gst + fee;
+
+        document.getElementById('price_display').textContent = price.toFixed(2);
+        document.getElementById('gst_display').textContent = gst.toFixed(2);
+        document.getElementById('fee_display').textContent = fee.toFixed(2);
+        document.getElementById('total_display').textContent = total.toFixed(2);
+        document.getElementById('earnings_display').textContent = earnings.toFixed(2);
+    });
+</script>
+{% endblock %}
