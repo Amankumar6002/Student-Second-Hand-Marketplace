@@ -41,8 +41,6 @@ def ensure_database_schema():
         order_columns = {column["name"] for column in inspector.get_columns("orders")}
         for column_name, column_sql in {
             "payment_status": "VARCHAR(30) DEFAULT 'pending' NOT NULL",
-            "razorpay_order_id": "VARCHAR(120)",
-            "razorpay_payment_id": "VARCHAR(120)",
             "currency": "VARCHAR(10) DEFAULT 'INR' NOT NULL",
             "paid_at": "DATETIME",
         }.items():
@@ -52,9 +50,6 @@ def ensure_database_schema():
     if "payments" in inspector.get_table_names():
         payment_columns = {column["name"] for column in inspector.get_columns("payments")}
         for column_name, column_sql in {
-            "razorpay_order_id": "VARCHAR(120)",
-            "razorpay_payment_id": "VARCHAR(120)",
-            "razorpay_signature": "VARCHAR(255)",
             "payment_status": "VARCHAR(20) DEFAULT 'pending' NOT NULL",
             "currency": "VARCHAR(10) DEFAULT 'INR' NOT NULL",
             "paid_at": "DATETIME",

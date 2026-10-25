@@ -34,33 +34,21 @@
                     <h5 class="mb-0">Select Payment Method</h5>
                 </div>
                 <div class="card-body">
-                    {% if razorpay_ready %}
-                        <div class="alert alert-info">
-                            Secure checkout with Razorpay Test Mode is ready. No secret key is exposed in the browser.
+                    <form method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="list-group">
+                            {% for method in payment_methods %}
+                                <label class="list-group-item">
+                                    <input class="form-check-input" type="radio" name="payment_method" value="{{ method }}" required>
+                                    <strong>{{ method }}</strong>
+                                    <small class="d-block text-muted">Pay when you receive the item</small>
+                                </label>
+                            {% endfor %}
                         </div>
-                        <button id="razorpay-button" class="btn btn-primary btn-lg">Pay with Razorpay</button>
-                        <a href="{{ url_for('products.detail', product_id=item.id if item_type == 'product' else item.id) }}" class="btn btn-outline-secondary ms-2">Cancel</a>
-                    {% else %}
-                        <form method="POST">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <div class="list-group">
-                                {% for method in payment_methods %}
-                                    <label class="list-group-item">
-                                        <input class="form-check-input" type="radio" name="payment_method" value="{{ method }}" required>
-                                        <strong>{{ method }}</strong>
-                                        {% if method == "Razorpay" %}
-                                            <small class="d-block text-muted">Secure online payment via Razorpay Test Mode</small>
-                                        {% elif method == "Cash on Delivery" %}
-                                            <small class="d-block text-muted">Pay when you receive the item</small>
-                                        {% endif %}
-                                    </label>
-                                {% endfor %}
-                            </div>
-                            <div class="mt-4">
-                                <button type="submit" class="btn btn-primary btn-lg btn-block">Continue to Payment</button>
-                            </div>
-                        </form>
-                    {% endif %}
+                        <div class="mt-4">
+                            <button type="submit" class="btn btn-primary btn-lg btn-block">Place Order</button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
@@ -101,63 +89,6 @@
         </div>
     </div>
 </div>
-
-{% if razorpay_ready %}
-<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-<script>
-    const razorpayOptions = {
-        key: "{{ razorpay_key_id }}",
-        amount: "{{ razorpay_amount }}",
-        currency: "{{ razorpay_currency }}",
-        name: "Kalasalingam Student Marketplace",
-        description: "{{ item.title }}",
-        order_id: "{{ razorpay_order_id }}",
-        handler: function (response) {
-            fetch("{{ url_for('payments.verify_payment') }}", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-CSRFToken": "{{ csrf_token() }}"
-                },
-                body: JSON.stringify({
-                    razorpay_payment_id: response.razorpay_payment_id,
-                    razorpay_order_id: response.razorpay_order_id,
-                    razorpay_signature: response.razorpay_signature,
-                    order_id: "{{ order.id }}"
-                })
-            }).then(async function (res) {
-                const data = await res.json();
-                if (res.ok && data.status === "success") {
-                    window.location.href = data.redirect_url;
-                    return;
-                }
-                alert(data.message || "Payment verification failed.");
-                window.location.href = "{{ url_for('payments.payment_cancel', order_id=order.id) }}";
-            }).catch(function () {
-                alert("Something went wrong while verifying the payment.");
-                window.location.href = "{{ url_for('payments.payment_cancel', order_id=order.id) }}";
-            });
-        },
-        prefill: {
-            name: "{{ current_user.name }}",
-            email: "{{ current_user.university_email }}"
-        },
-        theme: {
-            color: "#0d6efd"
-        },
-        modal: {
-            ondismiss: function () {
-                window.location.href = "{{ url_for('payments.payment_cancel', order_id=order.id) }}";
-            }
-        }
-    };
-
-    document.getElementById("razorpay-button").addEventListener("click", function () {
-        const rzp = new Razorpay(razorpayOptions);
-        rzp.open();
-    });
-</script>
-{% endif %}
 
 <style>
     .list-group-item { cursor: pointer; transition: all 0.3s; }

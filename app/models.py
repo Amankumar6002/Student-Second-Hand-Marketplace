@@ -248,8 +248,6 @@ class Order(db.Model):
     total_amount = db.Column(db.Numeric(10, 2), nullable=False)
     payment_method = db.Column(db.String(50), nullable=False)
     payment_status = db.Column(db.String(30), default="pending", nullable=False)
-    razorpay_order_id = db.Column(db.String(120), nullable=True)
-    razorpay_payment_id = db.Column(db.String(120), nullable=True)
     currency = db.Column(db.String(10), default="INR", nullable=False)
     paid_at = db.Column(db.DateTime, nullable=True)
     status = db.Column(db.String(30), default="pending", nullable=False)  # pending, paid, delivered, completed
@@ -271,9 +269,6 @@ class Payment(db.Model):
     amount = db.Column(db.Numeric(10, 2), nullable=False)
     payment_method = db.Column(db.String(50), nullable=False)  # UPI, Debit Card, Credit Card, Net Banking, Cash on Delivery
     transaction_id = db.Column(db.String(100), unique=True)
-    razorpay_order_id = db.Column(db.String(120), nullable=True)
-    razorpay_payment_id = db.Column(db.String(120), nullable=True)
-    razorpay_signature = db.Column(db.String(255), nullable=True)
     payment_status = db.Column(db.String(20), default="pending", nullable=False)  # pending, completed, failed
     currency = db.Column(db.String(10), default="INR", nullable=False)
     paid_at = db.Column(db.DateTime, nullable=True)

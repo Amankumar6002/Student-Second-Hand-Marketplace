@@ -20,7 +20,3 @@ class Config:
     UPLOAD_FOLDER = os.getenv(
         "UPLOAD_FOLDER", str(BASE_DIR / "app" / "static" / "uploads")
     )
-    RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
-    RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
-    RAZORPAY_TEST_MODE = os.getenv("RAZORPAY_TEST_MODE", "true").lower() == "true"
-    RAZORPAY_CURRENCY = os.getenv("RAZORPAY_CURRENCY", "INR")

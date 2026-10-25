@@ -1,16 +1,12 @@
-import json
-import logging
 from datetime import datetime
 from decimal import Decimal
 from functools import wraps
 
-import razorpay
-from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from ..extensions import db
 from ..models import (
-    AdminEarnings,
     AdminProduct,
     GSTTransaction,
     Order,
@@ -20,7 +16,6 @@ from ..models import (
 )
 
 payments_bp = Blueprint("payments", __name__, url_prefix="/payments")
-logger = logging.getLogger(__name__)
 
 
 def buyer_required(view):
@@ -62,70 +57,8 @@ def calculate_order_totals(product_price, is_admin_store=False):
     }
 
 
-def get_payment_methods(is_admin_store=False):
-    methods = ["Razorpay"]
-    if is_admin_store:
-        methods.append("Cash on Delivery")
-    return methods
-
-
-def get_razorpay_client():
-    key_id = current_app.config.get("RAZORPAY_KEY_ID")
-    key_secret = current_app.config.get("RAZORPAY_KEY_SECRET")
-    if not key_id or not key_secret:
-        logger.warning(
-            "Razorpay configuration missing: RAZORPAY_KEY_ID=%s, RAZORPAY_KEY_SECRET_present=%s",
-            bool(key_id),
-            bool(key_secret),
-        )
-        return None
-    return razorpay.Client(auth=(key_id, key_secret))
-
-
-def create_razorpay_order_for_local_order(order):
-    client = get_razorpay_client()
-    if client is None:
-        raise RuntimeError("Razorpay credentials are not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in the environment.")
-
-    total_amount = Decimal(str(order.total_amount))
-    if total_amount <= 0:
-        raise ValueError(f"Razorpay order amount must be positive. Order {order.id} total_amount={order.total_amount!r}")
-
-    currency = current_app.config.get("RAZORPAY_CURRENCY", "INR")
-    if currency.upper() != "INR":
-        logger.warning("Razorpay order created with non-INR currency for order %s: %s", order.id, currency)
-
-    amount_in_paise = int((total_amount * 100).quantize(Decimal("1")))
-    payload = {
-        "amount": amount_in_paise,
-        "currency": currency,
-        "receipt": order.order_number,
-        "notes": {
-            "order_id": order.id,
-            "buyer_id": order.buyer_id,
-            "seller_id": order.seller_id or "admin",
-            "product_id": order.product_id or order.admin_product_id,
-            "order_type": order.order_type,
-        },
-    }
-    try:
-        response = client.order.create(data=payload)
-    except Exception:
-        logger.exception("Razorpay order creation failed for order %s", order.id)
-        raise
-
-    order.razorpay_order_id = response.get("id")
-    order.payment_status = "created"
-    order.currency = payload["currency"]
-    db.session.add(order)
-    db.session.commit()
-    return response
-
-
-def resolve_product_for_order(order):
-    if order.admin_product_id:
-        return AdminProduct.query.get(order.admin_product_id), "admin"
-    return Product.query.get(order.product_id), "product"
+def get_payment_methods():
+    return ["Cash on Delivery"]
 
 
 @payments_bp.route("/checkout/<item_type>/<int:item_id>", methods=["GET", "POST"])
@@ -150,12 +83,15 @@ def checkout(item_type, item_id):
         return redirect(url_for("products.home"))
 
     totals = calculate_order_totals(price, is_admin_store)
-    payment_methods = get_payment_methods(is_admin_store)
+    payment_methods = get_payment_methods()
 
     if request.method == "POST":
         payment_method = request.form.get("payment_method")
         if not payment_method:
             flash("Please select a payment method.", "danger")
+            return render_template("payments/checkout.html", item=product, item_type=item_type, totals=totals, payment_methods=payment_methods)
+        if payment_method not in payment_methods:
+            flash("Please choose a valid payment method.", "danger")
             return render_template("payments/checkout.html", item=product, item_type=item_type, totals=totals, payment_methods=payment_methods)
 
         if product.status == "sold":
@@ -200,42 +136,13 @@ def checkout(item_type, item_id):
         db.session.add(order)
         db.session.flush()
 
-        try:
-            if payment_method == "Razorpay":
-                create_razorpay_order_for_local_order(order)
-                order.payment_method = "Razorpay"
-                db.session.add(order)
-                db.session.commit()
-                return render_template(
-                    "payments/checkout.html",
-                    item=product,
-                    item_type=item_type,
-                    totals=totals,
-                    payment_methods=payment_methods,
-                    razorpay_key_id=current_app.config.get("RAZORPAY_KEY_ID"),
-                    razorpay_order_id=order.razorpay_order_id,
-                    razorpay_amount=int((Decimal(str(order.total_amount)) * 100).quantize(Decimal("1"))),
-                    razorpay_currency=current_app.config.get("RAZORPAY_CURRENCY", "INR"),
-                    order=order,
-                    razorpay_ready=True,
-                )
-
-            if payment_method == "Cash on Delivery":
-                order.payment_method = "Cash on Delivery"
-                order.payment_status = "completed"
-                order.status = "paid"
-                order.paid_at = datetime.utcnow()
-                db.session.add(order)
-                db.session.commit()
-                return redirect(url_for("payments.success", order_id=order.id))
-        except Exception:
-            db.session.rollback()
-            logger.exception("Razorpay order creation failed for order %s", order.id)
-            flash("We could not start the payment session right now. Please add valid Razorpay test credentials in the environment and try again later.", "danger")
-            return render_template("payments/checkout.html", item=product, item_type=item_type, totals=totals, payment_methods=payment_methods)
-
-        flash("Please choose a valid payment method.", "danger")
-        return render_template("payments/checkout.html", item=product, item_type=item_type, totals=totals, payment_methods=payment_methods)
+        if payment_method == "Cash on Delivery":
+            order.payment_method = "Cash on Delivery"
+            order.payment_status = "pending"
+            order.status = "pending"
+            db.session.add(order)
+            db.session.commit()
+            return redirect(url_for("payments.success", order_id=order.id))
 
     return render_template("payments/checkout.html", item=product, item_type=item_type, totals=totals, payment_methods=payment_methods)
 
@@ -250,13 +157,10 @@ def payment_method(order_id):
 
     if request.method == "POST":
         payment_method = request.form.get("payment_method")
-        if payment_method == "Razorpay":
-            return redirect(url_for("payments.checkout", item_type="product" if order.product_id else "admin", item_id=order.product_id or order.admin_product_id))
         if payment_method == "Cash on Delivery":
             order.payment_method = "Cash on Delivery"
-            order.payment_status = "completed"
-            order.status = "paid"
-            order.paid_at = datetime.utcnow()
+            order.payment_status = "pending"
+            order.status = "pending"
             db.session.add(order)
             db.session.commit()
             return redirect(url_for("payments.success", order_id=order.id))
@@ -275,135 +179,10 @@ def payment_form(order_id):
         return redirect(url_for("products.home"))
 
     if request.method == "POST":
-        flash("This payment flow uses Razorpay checkout for secure online payments.", "info")
+        flash("Select Cash on Delivery to complete your order.", "info")
         return redirect(url_for("payments.checkout", item_type="product" if order.product_id else "admin", item_id=order.product_id or order.admin_product_id))
 
     return render_template("payments/payment_form.html", order=order, payment_method=order.payment_method)
-
-
-@payments_bp.route("/verify", methods=["POST"])
-@buyer_required
-def verify_payment():
-    payload = request.get_json(silent=True) or {}
-    razorpay_payment_id = payload.get("razorpay_payment_id")
-    razorpay_order_id = payload.get("razorpay_order_id")
-    razorpay_signature = payload.get("razorpay_signature")
-    order_id = payload.get("order_id")
-
-    if not all([razorpay_payment_id, razorpay_order_id, razorpay_signature, order_id]):
-        return jsonify({"status": "error", "message": "Payment verification data is incomplete."}), 400
-
-    order = Order.query.get(order_id)
-    if not order:
-        return jsonify({"status": "error", "message": "Order not found."}), 404
-    if order.buyer_id != current_user.id:
-        return jsonify({"status": "error", "message": "You are not allowed to verify this order."}), 403
-    if order.razorpay_order_id != razorpay_order_id:
-        return jsonify({"status": "error", "message": "Order mismatch while verifying payment."}), 400
-
-    key_secret = current_app.config.get("RAZORPAY_KEY_SECRET")
-    if not key_secret:
-        return jsonify({"status": "error", "message": "Razorpay is not configured in this environment."}), 500
-
-    try:
-        client = get_razorpay_client()
-        if client is None:
-            raise RuntimeError("Razorpay key configuration missing")
-        params = {
-            "razorpay_order_id": razorpay_order_id,
-            "razorpay_payment_id": razorpay_payment_id,
-            "razorpay_signature": razorpay_signature,
-        }
-        client.utility.verify_payment_signature(params)
-    except Exception:
-        logger.exception("Razorpay signature verification failed")
-        order.payment_status = "failed"
-        order.status = "pending"
-        db.session.add(order)
-        db.session.commit()
-        return jsonify({"status": "error", "message": "Payment verification failed. Please try again."}), 400
-
-    payment = Payment.query.filter_by(order_id=order.id).first()
-    if payment is None:
-        payment = Payment(
-            order_id=order.id,
-            user_id=order.buyer_id,
-            amount=order.total_amount,
-            payment_method="Razorpay",
-            transaction_id=razorpay_payment_id,
-            razorpay_order_id=razorpay_order_id,
-            razorpay_payment_id=razorpay_payment_id,
-            razorpay_signature=razorpay_signature,
-            payment_status="completed",
-            currency=order.currency or "INR",
-            status="completed",
-        )
-        db.session.add(payment)
-    else:
-        payment.razorpay_order_id = razorpay_order_id
-        payment.razorpay_payment_id = razorpay_payment_id
-        payment.razorpay_signature = razorpay_signature
-        payment.payment_status = "completed"
-        payment.status = "completed"
-        payment.transaction_id = razorpay_payment_id
-        payment.amount = order.total_amount
-        payment.paid_at = datetime.utcnow()
-        db.session.add(payment)
-
-    order.payment_status = "paid"
-    order.status = "paid"
-    order.razorpay_payment_id = razorpay_payment_id
-    order.paid_at = datetime.utcnow()
-    db.session.add(order)
-
-    product, product_type = resolve_product_for_order(order)
-    if product is not None:
-        if product_type == "admin":
-            product.status = "unavailable"
-            product.stock = max(0, product.stock - 1)
-        else:
-            product.status = "sold"
-        db.session.add(product)
-
-    gst_transaction = GSTTransaction.query.filter_by(order_id=order.id).first()
-    if gst_transaction is None:
-        gst_transaction = GSTTransaction(
-            order_id=order.id,
-            gst_amount=order.gst_amount,
-            gst_rate=18.0,
-            product_price=order.product_price,
-        )
-        db.session.add(gst_transaction)
-
-    admin_earnings = AdminEarnings.query.filter_by(order_id=order.id).first()
-    if admin_earnings is None:
-        admin_earnings = AdminEarnings(
-            order_id=order.id,
-            platform_fee=order.platform_fee,
-            gst_amount=order.gst_amount,
-            total_earnings=order.platform_fee + order.gst_amount,
-            transaction_type="purchase",
-        )
-        db.session.add(admin_earnings)
-
-    db.session.commit()
-    return jsonify({"status": "success", "redirect_url": url_for("payments.success", order_id=order.id)})
-
-
-@payments_bp.route("/cancel/<int:order_id>")
-@buyer_required
-def payment_cancel(order_id):
-    order = Order.query.get_or_404(order_id)
-    if order.buyer_id != current_user.id:
-        flash("Unauthorized access.", "danger")
-        return redirect(url_for("products.home"))
-
-    order.payment_status = "failed"
-    order.status = "pending"
-    db.session.add(order)
-    db.session.commit()
-    flash("Payment was cancelled. The item remains available for purchase.", "warning")
-    return redirect(url_for("payments.checkout", item_type="product" if order.product_id else "admin", item_id=order.product_id or order.admin_product_id))
 
 
 @payments_bp.route("/success/<int:order_id>")

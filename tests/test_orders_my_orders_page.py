@@ -100,6 +100,39 @@ class MyOrdersPageTests(unittest.TestCase):
         self.assertIn(b'Order #', response.data)
         self.assertIn(b'Showing 1 - 1 of 1 orders', response.data)
 
+    def test_student_checkout_uses_cash_on_delivery(self):
+        self.client.post(
+            '/login',
+            data={'email': self.buyer_email, 'password': self.buyer_password},
+            follow_redirects=True,
+        )
+
+        with self.app.app_context():
+            product = Product.query.filter_by(title='Used Laptop').first()
+            product_id = product.id
+
+        response = self.client.get(f'/payments/checkout/product/{product_id}')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Cash on Delivery', response.data)
+
+        response = self.client.post(
+            f'/payments/checkout/product/{product_id}',
+            data={'payment_method': 'Cash on Delivery'},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Order Confirmed!', response.data)
+
+        with self.app.app_context():
+            order = Order.query.filter_by(
+                buyer_id=User.query.filter_by(university_email=self.buyer_email).first().id,
+                product_id=product_id,
+                payment_method='Cash on Delivery',
+                payment_status='pending',
+                status='pending',
+            ).order_by(Order.id.desc()).first()
+            self.assertIsNotNone(order)
+
 
 if __name__ == '__main__':
     unittest.main()
