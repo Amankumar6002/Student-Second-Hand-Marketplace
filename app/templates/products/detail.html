@@ -1,42 +1,139 @@
 {% extends 'base.html' %}{% block title %}{{ product.title }} | KLU Marketplace{% endblock %}{% block content %}<section class="container detail-page"><div><div class="detail-image"><img src="{{ product.image_url }}" alt="{{ product.title }}"></div>{% if product.images|length > 1 %}<div class="detail-gallery">{% for image in product.images %}<img src="{{ image.image_path }}" alt="{{ product.title }} photo {{ loop.index }}">{% endfor %}</div>{% endif %}</div><div class="detail-copy"><p class="eyebrow">{{ product.category.name }} · {{ product.condition }}</p><h1>{{ product.title }}</h1><p class="seller-line"><i class="fa-solid fa-circle-check"></i> {{ product.seller.name }} · {{ product.location }} {% if product.seller.is_verified %}<span class="verified">Verified student</span>{% endif %}</p><div class="detail-price">{% if product.price %}<strong>₹{{ product.price }}</strong>{% endif %}{% if product.rental_price %}<span>₹{{ product.rental_price }} / day to rent</span>{% endif %}</div><p class="detail-description">{{ product.description }}</p><div class="availability"><strong>Availability</strong><span>{{ product.availability or 'Coordinate a handover with the seller' }}</span></div><div class="detail-actions">{% if current_user.is_authenticated and current_user.id != product.seller_id %}{% if product.listing_type in ['sale','both'] %}<form method="post" action="{{ url_for('products.buy', product_id=product.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-ink">Buy / request item</button></form>{% endif %}{% if product.listing_type in ['rent','both'] %}<a class="btn btn-outline" href="{{ url_for('rentals.rent', product_id=product.id) }}">Request a rental</a>{% endif %}<a class="btn btn-quiet" href="{{ url_for('messages.conversation', user_id=product.seller_id, product_id=product.id) }}">Contact seller</a>{% endif %}<form method="post" action="{{ url_for('products.wishlist', product_id=product.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-quiet">♡ Save</button></form></div><details class="report-box"><summary>Report this listing</summary><form method="post" action="{{ url_for('products.report', product_id=product.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><select name="reason"><option>Suspicious listing</option><option>Incorrect information</option><option>Inappropriate content</option></select><textarea name="description" placeholder="Tell us what looks wrong"></textarea><button class="btn btn-quiet">Submit report</button></form></details></div>
-<div class="card soft-card mt-5">
-  <div class="card-body">
-    <h3>⭐ Product Rating</h3>
-    <p>{{ '%.1f'|format(review_summary.average) }}/5 · {{ review_summary.count }} reviews</p>
-    <div class="review-distribution">
-      {% for star in [5,4,3,2,1] %}
+<section class="product-reviews" id="product-reviews" aria-labelledby="product-reviews-heading">
+  <div class="reviews-section-heading">
+    <div>
+      <p class="eyebrow">COMMUNITY FEEDBACK</p>
+      <h2 id="product-reviews-heading">Product Ratings &amp; Reviews</h2>
+    </div>
+    {% if current_user.is_authenticated and can_review_product %}
+    <a class="btn btn-ink" href="#write-review">Write a review</a>
+    {% elif not current_user.is_authenticated %}
+    <a class="btn btn-outline" href="{{ url_for('auth.login', next=url_for('products.detail', product_id=product.id)) }}">Log in to review</a>
+    {% endif %}
+  </div>
+
+  <div class="rating-summary">
+    <div class="rating-overview">
+      <p class="rating-average">{{ '%.1f'|format(review_summary.average) }}<span> / 5</span></p>
+      <div class="rating-stars" role="img" aria-label="{{ '%.1f'|format(review_summary.average) }} out of 5 stars">
+        <span class="rating-stars-empty" aria-hidden="true">★★★★★</span>
+        <span class="rating-stars-fill" aria-hidden="true" style="width: {{ [review_summary.average * 20, 100]|min }}%">★★★★★</span>
+      </div>
+      <p class="rating-total">{{ review_summary.count }} {{ 'rating' if review_summary.count == 1 else 'ratings and reviews' }}</p>
+    </div>
+    <div class="rating-breakdown" aria-label="Rating distribution">
+      {% for star in [5, 4, 3, 2, 1] %}
+      {% set count = review_summary.distribution[star] %}
+      {% set percentage = (count / review_summary.count * 100) if review_summary.count else 0 %}
       <div class="distribution-row">
-        <span>{{ star }}★</span>
-        <div class="distribution-bar"><span style="width: {{ (review_summary.distribution[star] / review_summary.count * 100) if review_summary.count else 0 }}%"></span></div>
-        <strong>{{ review_summary.distribution[star] }}</strong>
+        <span class="distribution-label">{{ star }} <span aria-hidden="true">★</span></span>
+        <div class="distribution-bar" role="progressbar" aria-label="{{ star }} star reviews" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ percentage|round|int }}">
+          <span style="width: {{ percentage }}%"></span>
+        </div>
+        <span class="distribution-count">{{ count }}</span>
       </div>
       {% endfor %}
     </div>
-    {% if current_user.is_authenticated and can_review_product %}
-    <form method="post" action="{{ url_for('products.submit_product_review', product_id=product.id) }}" enctype="multipart/form-data" class="review-form mt-4">
+  </div>
+
+  {% if can_review_product %}
+  <details class="write-review" id="write-review" open>
+    <summary>Rate this product</summary>
+    <form method="post" action="{{ url_for('products.submit_product_review', product_id=product.id) }}" enctype="multipart/form-data" class="review-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="mb-3"><label>Rating</label><select name="rating" class="form-select" required><option value="5">5 - Excellent</option><option value="4">4 - Good</option><option value="3">3 - Average</option><option value="2">2 - Poor</option><option value="1">1 - Very Poor</option></select></div>
-      <div class="mb-3"><label>Review</label><textarea name="comment" rows="4" required></textarea></div>
-      <div class="mb-3"><label>Optional photo</label><input type="file" name="photo" accept="image/png,image/jpeg,image/webp"></div>
+      <fieldset class="rating-fieldset">
+        <legend>Your rating</legend>
+        <div class="star-picker" role="radiogroup" aria-label="Choose a rating from one to five stars">
+          {% for star in range(1, 6) %}
+          <input type="radio" id="rating-{{ star }}" name="rating" value="{{ star }}" {% if star == 5 %}checked{% endif %} required>
+          <label for="rating-{{ star }}" aria-label="{{ star }} {{ 'star' if star == 1 else 'stars' }}">★</label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <label class="review-input-label" for="review-comment">Your review</label>
+      <textarea id="review-comment" name="comment" rows="4" maxlength="2000" required placeholder="What should other students know about this item?"></textarea>
+      <label class="review-input-label" for="review-photo">Add a photo (optional)</label>
+      <input id="review-photo" type="file" name="photo" accept="image/png,image/jpeg,image/webp">
       <button type="submit" class="btn btn-ink">Submit review</button>
     </form>
-    {% elif current_user.is_authenticated %}
-    <p class="muted mt-3">Complete a purchase to leave a review.</p>
+  </details>
+  {% elif current_user.is_authenticated and current_user.id != product.seller_id %}
+  <p class="review-eligibility">Complete a purchase or rental to write a review. Only completed transactions are eligible.</p>
+  {% endif %}
+
+  <div class="customer-reviews">
+    <div class="customer-reviews-heading">
+      <h3>Customer Reviews</h3>
+      <span>{{ reviews.total }} {{ 'review' if reviews.total == 1 else 'reviews' }}{% if selected_rating %} · {{ selected_rating }} stars{% endif %}</span>
+    </div>
+    {% if review_summary.count %}
+    <form class="review-controls" method="get" action="{{ url_for('products.detail', product_id=product.id) }}">
+      <label for="review-sort">Sort by</label>
+      <select id="review-sort" name="sort">
+        <option value="recent" {% if review_sort == 'recent' %}selected{% endif %}>Most recent</option>
+        <option value="highest" {% if review_sort == 'highest' %}selected{% endif %}>Highest rated</option>
+        <option value="lowest" {% if review_sort == 'lowest' %}selected{% endif %}>Lowest rated</option>
+      </select>
+      <label for="review-rating-filter">Rating</label>
+      <select id="review-rating-filter" name="rating">
+        <option value="">All ratings</option>
+        {% for star in [5, 4, 3, 2, 1] %}
+        <option value="{{ star }}" {% if selected_rating == star %}selected{% endif %}>{{ star }} {{ 'star' if star == 1 else 'stars' }} ({{ review_summary.distribution[star] }})</option>
+        {% endfor %}
+      </select>
+      <button class="btn btn-quiet" type="submit">Apply</button>
+      {% if selected_rating or review_sort != 'recent' %}<a class="review-reset" href="{{ url_for('products.detail', product_id=product.id) }}">Reset</a>{% endif %}
+    </form>
     {% endif %}
-    <div class="reviews-list mt-4">
-      {% for review in reviews %}
-      <article class="review-item">
-        <div class="review-header"><div><strong>{{ '★' * review.rating }}{{ '☆' * (5 - review.rating) }}</strong><p class="mb-0">"{{ review.comment }}"</p></div><span class="muted">{{ review.created_at.strftime('%d %b %Y') }}</span></div>
-        <div class="review-meta"><span>— {{ review.reviewer.name }}</span>{% if current_user.is_authenticated %}<form method="post" action="{{ url_for('products.report_review', review_type='product', review_id=review.id) }}" style="display:inline;">
+
+    {% if reviews.items %}
+      {% for review in reviews.items %}
+      <article class="customer-review" data-rating="{{ review.rating }}" data-review-id="{{ review.id }}">
+        <div class="customer-review-top">
+          <div class="rating-stars review-stars" role="img" aria-label="{{ review.rating }} out of 5 stars"><span class="rating-stars-empty" aria-hidden="true">★★★★★</span><span class="rating-stars-fill" aria-hidden="true" style="width: {{ review.rating * 20 }}%">★★★★★</span></div>
+          <time class="review-date" datetime="{{ review.created_at.isoformat() }}">{{ review.created_at.strftime('%d %b %Y') }}</time>
+        </div>
+        <p class="customer-reviewer">{{ review.reviewer.name }}</p>
+        {% if review.order and review.order.status == 'completed' and review.order.buyer_id == review.user_id and review.order.product_id == product.id %}
+        <span class="verified-purchase"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Verified purchase</span>
+        {% endif %}
+        <p class="customer-review-text">{{ review.comment }}</p>
+        {% if review.image %}<img class="customer-review-image" src="{{ review.image }}" alt="Photo shared by {{ review.reviewer.name }} with their review" loading="lazy">{% endif %}
+        {% if current_user.is_authenticated %}
+        <form method="post" action="{{ url_for('products.report_review', review_type='product', review_id=review.id) }}" class="report-review-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="reason" value="Inappropriate">
-          <button type="submit" class="link-btn">Report</button>
-        </form>{% endif %}</div>
+          <button type="submit" class="link-btn">Report review</button>
+        </form>
+        {% endif %}
       </article>
-      {% else %}
-      <div class="empty-state">No reviews yet.</div>
       {% endfor %}
+      {% if reviews.pages > 1 %}
+      <nav class="review-pagination" aria-label="Review pages">
+        {% if reviews.has_prev %}<a href="{{ url_for('products.detail', product_id=product.id, page=reviews.prev_num, rating=selected_rating, sort=review_sort) }}">Previous</a>{% endif %}
+        <span>Page {{ reviews.page }} of {{ reviews.pages }}</span>
+        {% if reviews.has_next %}<a href="{{ url_for('products.detail', product_id=product.id, page=reviews.next_num, rating=selected_rating, sort=review_sort) }}">Next</a>{% endif %}
+      </nav>
+      {% endif %}
+    {% elif review_summary.count == 0 %}
+    <div class="reviews-empty">
+      <span class="empty-review-star" aria-hidden="true">★</span>
+      <h4>Be the first to review this product</h4>
+      {% if can_review_product %}
+      <p>Share your experience with other students.</p>
+      <a class="btn btn-ink" href="#write-review">Write a review</a>
+      {% elif not current_user.is_authenticated %}
+      <p>Log in and complete an eligible purchase or rental to share your experience.</p>
+      {% else %}
+      <p>There are no reviews yet. Complete a purchase or rental to share your experience.</p>
+      {% endif %}
     </div>
+    {% else %}
+    <div class="reviews-empty">
+      <p>No reviews match this rating.</p>
+      <a class="review-reset" href="{{ url_for('products.detail', product_id=product.id) }}">Clear rating filter</a>
+    </div>
+    {% endif %}
   </div>
-</div>
+</section>
 </section>{% endblock %}

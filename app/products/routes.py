@@ -1,15 +1,17 @@
 import html
 import os
 import uuid
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 from PIL import Image, UnidentifiedImageError
+from sqlalchemy import func
 from werkzeug.utils import secure_filename
 
 from ..auth.routes import active_required
+from ..email_notifications import notify_admin_listing_submitted
 from ..extensions import db
 from ..models import (
     AdminProduct,
@@ -151,8 +153,52 @@ def detail(product_id):
     product = Product.query.get_or_404(product_id)
     if product.approval_status != "approved" and (not current_user.is_authenticated or (current_user.id != product.seller_id and current_user.role != "admin")):
         return render_template("error.html", code=404, message="That listing is not available."), 404
-    reviews = ProductReview.query.filter_by(product_id=product.id).order_by(ProductReview.created_at.desc()).all()
-    review_summary = build_rating_summary(reviews)
+    all_product_reviews = ProductReview.query.filter_by(product_id=product.id)
+    review_count, average_rating = all_product_reviews.with_entities(
+        func.count(ProductReview.id),
+        func.avg(ProductReview.rating),
+    ).one()
+    rating_counts = dict(
+        db.session.query(ProductReview.rating, func.count(ProductReview.id))
+        .filter_by(product_id=product.id)
+        .group_by(ProductReview.rating)
+        .all()
+    )
+    review_summary = {
+        "count": review_count,
+        "average": (
+            float(Decimal(str(average_rating)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+            if average_rating is not None
+            else 0.0
+        ),
+        "distribution": {rating: rating_counts.get(rating, 0) for rating in range(1, 6)},
+    }
+
+    selected_rating = request.args.get("rating", type=int)
+    if selected_rating not in range(1, 6):
+        selected_rating = None
+    sort_order = request.args.get("sort", "recent")
+    if sort_order not in {"recent", "highest", "lowest"}:
+        sort_order = "recent"
+
+    reviews_query = all_product_reviews
+    if selected_rating:
+        reviews_query = reviews_query.filter_by(rating=selected_rating)
+    if sort_order == "highest":
+        reviews_query = reviews_query.order_by(
+            ProductReview.rating.desc(), ProductReview.created_at.desc()
+        )
+    elif sort_order == "lowest":
+        reviews_query = reviews_query.order_by(
+            ProductReview.rating.asc(), ProductReview.created_at.desc()
+        )
+    else:
+        reviews_query = reviews_query.order_by(ProductReview.created_at.desc())
+    reviews = reviews_query.paginate(
+        page=request.args.get("page", 1, type=int),
+        per_page=10,
+        error_out=False,
+    )
     seller_summary = get_seller_review_stats(product.seller_id)
     can_review_product = False
     if current_user.is_authenticated and current_user.id != product.seller_id:
@@ -165,6 +211,8 @@ def detail(product_id):
         review_summary=review_summary,
         seller_summary=seller_summary,
         can_review_product=can_review_product,
+        selected_rating=selected_rating,
+        review_sort=sort_order,
     )
 
 
@@ -431,12 +479,14 @@ def create():
             db.session.flush()
             _save_images(product)
             db.session.commit()
-            flash("Listing submitted for admin approval.", "success")
-            return redirect(url_for("products.detail", product_id=product.id))
         except Exception as e:
             db.session.rollback()
             flash(f"Error creating listing: {str(e)}", "danger")
             return render_template("products/form.html", categories=categories, product=None)
+
+        notify_admin_listing_submitted(product)
+        flash("Listing submitted for admin approval.", "success")
+        return redirect(url_for("products.detail", product_id=product.id))
     
     return render_template("products/form.html", categories=categories, product=None)
 
@@ -619,5 +669,3 @@ def report(product_id):
     db.session.commit()
     flash("Thanks. Our moderation team will review this listing.", "success")
     return redirect(url_for("products.detail", product_id=product_id))
-
-

@@ -13,6 +13,8 @@ class User(UserMixin, db.Model):
     registration_number = db.Column(db.String(40), unique=True, nullable=False)
     university_email = db.Column(db.String(160), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
+    google_subject = db.Column(db.String(255), nullable=True)
+    google_picture_url = db.Column(db.String(500), nullable=True)
     department = db.Column(db.String(120), nullable=False)
     section = db.Column(db.String(20), nullable=False)
     phone = db.Column(db.String(20))
@@ -22,6 +24,9 @@ class User(UserMixin, db.Model):
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     products = db.relationship("Product", back_populates="seller", lazy=True)
+    __table_args__ = (
+        db.Index("uq_users_google_subject", "google_subject", unique=True),
+    )
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)

@@ -7,6 +7,11 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from ..auth.routes import active_required
+from ..email_notifications import (
+    notify_account_suspended,
+    notify_student_account_activated,
+    notify_student_listing_moderated,
+)
 from ..extensions import db
 from ..models import (
     Category, Product, Report, User, Order, Payment, GSTTransaction, 
@@ -122,11 +127,18 @@ def products():
 @admin_only
 def moderate_product(product_id, action):
     product = Product.query.get_or_404(product_id)
+    previous_approval_status = product.approval_status
     if action == "approve": product.approval_status = "approved"
     elif action == "reject": product.approval_status = "rejected"
     elif action == "remove": product.status = "unavailable"; product.approval_status = "rejected"
     else: return render_template("error.html", code=400, message="Unknown moderation action."), 400
-    db.session.commit(); flash("Listing moderation updated.", "success")
+    db.session.commit()
+    if (
+        product.approval_status != previous_approval_status
+        and product.approval_status in {"approved", "rejected"}
+    ):
+        notify_student_listing_moderated(product, product.approval_status)
+    flash("Listing moderation updated.", "success")
     return redirect(url_for("admin.products"))
 
 
@@ -140,10 +152,35 @@ def users():
 @admin_only
 def moderate_user(user_id, action):
     user = User.query.get_or_404(user_id)
-    if action == "verify": user.is_verified = True
-    elif action == "suspend": user.is_active = False
-    elif action == "activate": user.is_active = True
-    db.session.commit(); flash("User status updated.", "success")
+    was_active = user.is_active
+    if action == "verify":
+        user.is_verified = True
+    elif action == "suspend":
+        user.is_active = False
+    elif action == "activate":
+        user.is_active = True
+    else:
+        return render_template("error.html", code=400, message="Unknown user moderation action."), 400
+
+    db.session.commit()
+    if action == "suspend" and was_active and user.role == "student":
+        if notify_account_suspended(user):
+            flash("User suspended and notification email sent.", "success")
+        else:
+            flash(
+                "User suspended, but the notification email could not be sent. Check the mail configuration and server logs.",
+                "warning",
+            )
+    elif action == "activate" and not was_active and user.role == "student":
+        if notify_student_account_activated(user):
+            flash("User activated and reactivation email sent.", "success")
+        else:
+            flash(
+                "User activated, but the reactivation email could not be sent. Check the mail configuration and server logs.",
+                "warning",
+            )
+    else:
+        flash("User status updated.", "success")
     return redirect(url_for("admin.users"))
 
 
@@ -299,4 +336,3 @@ def update_commission_status(commission_id):
 def settings():
     """Admin settings page"""
     return render_template("admin/settings.html")
-

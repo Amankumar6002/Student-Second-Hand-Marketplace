@@ -1,1 +1,28 @@
-{% extends 'base.html' %}{% block title %}Log in | KLU Marketplace{% endblock %}{% block content %}<section class="auth-page"><div class="auth-card"><p class="eyebrow">WELCOME BACK</p><h1>Good to see you.</h1><p class="muted">Sign in with your university account to continue.</p><form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>University email<input type="email" name="email" required placeholder="you@klu.ac.in"></label><label>Password<input type="password" name="password" required></label><button class="btn btn-ink w-100">Log in <i class="fa-solid fa-arrow-right"></i></button></form><p class="auth-switch">New here? <a href="{{ url_for('auth.register') }}">Create an account</a></p></div></section>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Log in | KLU Marketplace{% endblock %}
+{% block content %}
+<section class="auth-page">
+  <div class="auth-card">
+    <p class="eyebrow">WELCOME BACK</p>
+    <h1>Good to see you.</h1>
+    <p class="muted">Sign in with your university account to continue.</p>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>University email<input type="email" name="email" required placeholder="you@klu.ac.in"></label>
+      <label>Password<input type="password" name="password" required></label>
+      <button class="btn btn-ink w-100">Log in <i class="fa-solid fa-arrow-right"></i></button>
+    </form>
+    <p class="text-center muted my-3">or</p>
+    <a class="btn btn-outline-dark w-100" href="{{ url_for('auth.google_login', next=request.args.get('next')) }}">
+      <i class="fa-brands fa-google me-2"></i>Continue with Google
+    </a>
+    {% if support_email %}
+    <p class="text-center muted mt-3 mb-0">
+      Need help? <a href="mailto:{{ support_email|urlencode }}?subject=Account%20Suspension%20Appeal">Contact support</a>
+      at <a href="mailto:{{ support_email|urlencode }}">{{ support_email }}</a>.
+    </p>
+    {% endif %}
+    <p class="auth-switch">New here? <a href="{{ url_for('auth.register') }}">Create an account</a></p>
+  </div>
+</section>
+{% endblock %}

@@ -5,6 +5,7 @@ A university-exclusive second-hand marketplace for Kalasalingam University stude
 ## Included
 
 - University-domain registration with hashed passwords, login/logout, CSRF protection, and role checks
+- Google OpenID Connect sign-in for verified Kalasalingam University email addresses
 - Approved listing marketplace with search, category, condition, price, listing-type filters, sorting, pagination, and responsive cards
 - Secure multi-image uploads with extension validation and generated filenames
 - Buy request workflow, rental requests with overlap prevention, wishlist, reports, direct messaging, and rental history
@@ -18,7 +19,7 @@ A university-exclusive second-hand marketplace for Kalasalingam University stude
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
 Create the MySQL database:
@@ -28,6 +29,10 @@ CREATE DATABASE kalasalingam_marketplace CHARACTER SET utf8mb4 COLLATE utf8mb4_u
 ```
 
 Update `.env` with a random `SECRET_KEY`, MySQL connection string, and the university email domain. The default domain is `klu.ac.in`; adjust it if the university uses another configured domain.
+
+For Google sign-in, set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`. Configure the Google OAuth web client with the authorized origin `http://127.0.0.1:5000` and redirect URI `http://127.0.0.1:5000/login/google/callback`. Google-created accounts are regular student accounts and remain subject to the existing administrator verification process.
+
+For email notifications, configure `MAIL_USERNAME` and `MAIL_PASSWORD` in `.env` with a Gmail account and its Gmail App Password. The app uses Gmail SMTP with SSL on port 465. `MAIL_USERNAME` receives new-listing notifications and is the fallback support address; set `SUPPORT_EMAIL` to use a separate support inbox. Account suspension notices direct students to the configured support address. Do not use the Google OAuth client secret as the SMTP password. Set `PUBLIC_BASE_URL` to the canonical application origin when deploying; it defaults to `http://127.0.0.1:5000` for local development and is used to build safe email links.
 
 Run the seed script and app:
 

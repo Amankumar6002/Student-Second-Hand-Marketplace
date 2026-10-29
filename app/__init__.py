@@ -1,11 +1,12 @@
 import os
 
+from authlib.integrations.flask_client import OAuth
 from flask import Flask, current_app, render_template
 from flask_login import current_user
 from sqlalchemy import event
 
 from config import Config
-from .extensions import csrf, db, login_manager
+from .extensions import csrf, db, login_manager, mail
 from .models import Category, User
 
 
@@ -37,6 +38,25 @@ def ensure_database_schema():
     from sqlalchemy import text
 
     inspector = db.inspect(db.engine)
+    if "users" in inspector.get_table_names():
+        user_columns = {column["name"] for column in inspector.get_columns("users")}
+        for column_name, column_sql in {
+            "google_subject": "VARCHAR(255)",
+            "google_picture_url": "VARCHAR(500)",
+        }.items():
+            if column_name not in user_columns:
+                db.session.execute(
+                    text(f"ALTER TABLE users ADD COLUMN {column_name} {column_sql}")
+                )
+        index_names = {index["name"] for index in inspector.get_indexes("users")}
+        if "uq_users_google_subject" not in index_names:
+            google_subject_index = next(
+                index
+                for index in User.__table__.indexes
+                if index.name == "uq_users_google_subject"
+            )
+            google_subject_index.create(bind=db.engine, checkfirst=True)
+
     if "orders" in inspector.get_table_names():
         order_columns = {column["name"] for column in inspector.get_columns("orders")}
         for column_name, column_sql in {
@@ -67,6 +87,27 @@ def create_app(config_class=Config):
     db.init_app(app)
     login_manager.init_app(app)
     csrf.init_app(app)
+    app_oauth = OAuth()
+    app_oauth.init_app(app)
+    mail.init_app(app)
+    if app.config.get("GOOGLE_CLIENT_ID") and app.config.get("GOOGLE_CLIENT_SECRET"):
+        app_oauth.register(
+            name="google",
+            client_id=app.config["GOOGLE_CLIENT_ID"],
+            client_secret=app.config["GOOGLE_CLIENT_SECRET"],
+            server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+            client_kwargs={"scope": "openid email profile"},
+        )
+    else:
+        missing_settings = [
+            setting
+            for setting in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET")
+            if not app.config.get(setting)
+        ]
+        app.logger.warning(
+            "Google sign-in is disabled; missing configuration: %s",
+            ", ".join(missing_settings),
+        )
 
     from .auth.routes import auth_bp
     from .products.routes import products_bp
@@ -115,6 +156,7 @@ def create_app(config_class=Config):
     event.listen(db.metadata, "after_create", seed_default_admin)
 
     with app.app_context():
+        ensure_database_schema()
         db.create_all()
         ensure_database_schema()
         if not app.config.get("TESTING"):
