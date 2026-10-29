@@ -1,6 +1,7 @@
-import smtplib
+import json
 import unittest
-from unittest.mock import patch
+from urllib.error import HTTPError, URLError
+from unittest.mock import Mock, patch
 
 from app import create_app
 from app.email_notifications import notify_student_account_activated
@@ -14,6 +15,9 @@ class SuspendedAccountTestConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     WTF_CSRF_ENABLED = False
     SUPPORT_EMAIL = "support@example.test"
+    PUBLIC_BASE_URL = "https://marketplace.example.test"
+    RESEND_API_KEY = "re_test_key"
+    RESEND_FROM = "notifications@example.com"
 
 
 class SuspendedAccountSupportTests(unittest.TestCase):
@@ -66,34 +70,53 @@ class SuspendedAccountSupportTests(unittest.TestCase):
             f"/admin/users/{user_id or self.student_id}/{action}"
         )
 
+    @staticmethod
+    def _accepted_response():
+        response = Mock(status=200)
+        response.read.return_value = b'{"id":"email-test-id"}'
+        context = Mock()
+        context.__enter__ = Mock(return_value=response)
+        context.__exit__ = Mock(return_value=False)
+        return context
+
     def test_suspend_commits_then_emails_student_with_support_address(self):
         self._login_admin()
 
-        with patch("app.email_notifications.mail.send") as send:
-            def assert_suspension_committed(message):
+        with patch(
+            "app.email_notifications.urlopen",
+            return_value=self._accepted_response(),
+        ) as send:
+            def assert_suspension_committed(request, timeout):
                 with self.app.app_context():
                     user = db.session.get(User, self.student_id)
                     self.assertFalse(user.is_active)
+                self.assertEqual(timeout, 8)
+                return self._accepted_response()
 
             send.side_effect = assert_suspension_committed
             response = self._moderate("suspend")
 
         self.assertEqual(response.status_code, 302)
         send.assert_called_once()
-        message = send.call_args.args[0]
-        self.assertEqual(message.recipients, ["student@klu.ac.in"])
-        self.assertIn("Test Student", message.body)
-        self.assertIn("suspended", message.body)
-        self.assertIn("support@example.test", message.body)
-        self.assertIn("request a review", message.body)
-        self.assertNotIn("StrongPass123", message.body)
+        request = send.call_args.args[0]
+        payload = json.loads(request.data)
+        self.assertEqual(payload["to"], ["student@klu.ac.in"])
+        self.assertEqual(payload["from"], "notifications@example.com")
+        self.assertIn("Test Student", payload["text"])
+        self.assertIn("suspended", payload["text"])
+        self.assertIn("support@example.test", payload["text"])
+        self.assertIn("request a review", payload["text"])
+        self.assertNotIn("StrongPass123", payload["text"])
         with self.app.app_context():
             self.assertFalse(db.session.get(User, self.student_id).is_active)
 
     def test_repeat_suspend_does_not_send_duplicate_email(self):
         self._login_admin()
 
-        with patch("app.email_notifications.mail.send") as send:
+        with patch(
+            "app.email_notifications.urlopen",
+            return_value=self._accepted_response(),
+        ) as send:
             first_response = self._moderate("suspend")
             repeated_response = self._moderate("suspend")
 
@@ -101,23 +124,32 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         self.assertEqual(repeated_response.status_code, 302)
         send.assert_called_once()
 
-    def test_smtp_failure_does_not_revert_suspension_or_leak_error(self):
+    def test_provider_failure_does_not_revert_suspension_or_leak_error(self):
         self._login_admin()
 
         with self.assertLogs("app", level="WARNING") as captured_logs:
             with patch(
-                "app.email_notifications.mail.send",
-                side_effect=smtplib.SMTPServerDisconnected(
-                    "private SMTP response must not be logged"
-                ),
+                "app.email_notifications.urlopen",
+                side_effect=URLError("private provider response must not be logged"),
             ) as send:
                 response = self._moderate("suspend")
 
         self.assertEqual(response.status_code, 302)
         send.assert_called_once()
         output = "\n".join(captured_logs.output)
-        self.assertIn("Account suspension email failed", output)
-        self.assertNotIn("private SMTP response", output)
+        self.assertIn("Email API request failed", output)
+        self.assertNotIn("private provider response", output)
+        with self.client.session_transaction() as session:
+            flashes = session.get("_flashes", [])
+        self.assertIn(("success", "User suspended."), flashes)
+        self.assertIn(
+            (
+                "warning",
+                "The suspension notification email could not be sent. "
+                "Check the Resend configuration and server logs.",
+            ),
+            flashes,
+        )
         with self.app.app_context():
             self.assertFalse(db.session.get(User, self.student_id).is_active)
 
@@ -163,31 +195,37 @@ class SuspendedAccountSupportTests(unittest.TestCase):
             db.session.commit()
 
         self._login_admin()
-        with patch("app.email_notifications.mail.send") as send:
-            def assert_activation_committed(message):
+        with patch(
+            "app.email_notifications.urlopen",
+            return_value=self._accepted_response(),
+        ) as send:
+            def assert_activation_committed(request, timeout):
                 with self.app.app_context():
                     student = db.session.get(User, self.student_id)
                     self.assertTrue(student.is_active)
+                self.assertEqual(timeout, 8)
+                return self._accepted_response()
 
             send.side_effect = assert_activation_committed
             response = self._moderate("activate")
 
         self.assertEqual(response.status_code, 302)
         send.assert_called_once()
-        message = send.call_args.args[0]
+        request = send.call_args.args[0]
+        payload = json.loads(request.data)
         self.assertEqual(
-            message.subject,
+            payload["subject"],
             "Your Student Second-Hand Marketplace Account Has Been Reactivated",
         )
-        self.assertEqual(message.recipients, ["student@klu.ac.in"])
-        self.assertEqual(message.sender, self.app.config["MAIL_DEFAULT_SENDER"])
-        self.assertIn("Hello Test Student,", message.body)
-        self.assertIn("reactivated by the administrator", message.body)
-        self.assertIn("You can now log in again", message.body)
-        self.assertIn("support@example.test", message.body)
+        self.assertEqual(payload["to"], ["student@klu.ac.in"])
+        self.assertEqual(request.get_header("Authorization"), "Bearer re_test_key")
+        self.assertIn("Hello Test Student,", payload["text"])
+        self.assertIn("reactivated by the administrator", payload["text"])
+        self.assertIn("You can now log in again", payload["text"])
+        self.assertIn("support@example.test", payload["text"])
         with self.client.session_transaction() as session:
             self.assertIn(
-                ("success", "User activated and reactivation email sent."),
+                ("success", "User activated."),
                 session.get("_flashes", []),
             )
         with self.app.app_context():
@@ -198,13 +236,13 @@ class SuspendedAccountSupportTests(unittest.TestCase):
 
     def test_reactivating_active_account_does_not_send_duplicate_email(self):
         self._login_admin()
-        with patch("app.email_notifications.mail.send") as send:
+        with patch("app.email_notifications.urlopen") as send:
             response = self._moderate("activate")
 
         self.assertEqual(response.status_code, 302)
         send.assert_not_called()
 
-    def test_verify_action_does_not_send_reactivation_email(self):
+    def test_verification_does_not_activate_a_suspended_account(self):
         with self.app.app_context():
             student = db.session.get(User, self.student_id)
             student.is_active = False
@@ -212,15 +250,126 @@ class SuspendedAccountSupportTests(unittest.TestCase):
             db.session.commit()
 
         self._login_admin()
-        with patch("app.email_notifications.mail.send") as send:
+        with patch(
+            "app.email_notifications.urlopen",
+            return_value=self._accepted_response(),
+        ) as send:
             response = self._moderate("verify")
 
         self.assertEqual(response.status_code, 302)
-        send.assert_not_called()
+        send.assert_called_once()
+        payload = json.loads(send.call_args.args[0].data)
+        self.assertIn("Verified", payload["subject"])
         with self.app.app_context():
             student = db.session.get(User, self.student_id)
             self.assertFalse(student.is_active)
             self.assertTrue(student.is_verified)
+
+    def test_admin_verification_commits_and_sends_marketplace_access_email(self):
+        with self.app.app_context():
+            student = db.session.get(User, self.student_id)
+            student.is_verified = False
+            db.session.commit()
+
+        self._login_admin()
+        with patch(
+            "app.email_notifications.urlopen",
+            return_value=self._accepted_response(),
+        ) as send:
+            response = self._moderate("verify")
+
+        self.assertEqual(response.status_code, 302)
+        send.assert_called_once()
+        request = send.call_args.args[0]
+        payload = json.loads(request.data)
+        self.assertEqual(payload["to"], ["student@klu.ac.in"])
+        self.assertEqual(
+            payload["subject"],
+            "Your Student Second-Hand Marketplace Account Has Been Verified!",
+        )
+        self.assertIn("You can now access the marketplace", payload["text"])
+        self.assertIn("https://marketplace.example.test", payload["text"])
+        self.assertEqual(send.call_args.kwargs["timeout"], 8)
+        with self.app.app_context():
+            student = db.session.get(User, self.student_id)
+            self.assertTrue(student.is_verified)
+            self.assertTrue(student.is_active)
+        with self.client.session_transaction() as session:
+            self.assertIn(
+                ("success", "User verification updated."),
+                session.get("_flashes", []),
+            )
+
+    def test_repeated_verification_does_not_send_duplicate_email(self):
+        with self.app.app_context():
+            student = db.session.get(User, self.student_id)
+            student.is_verified = False
+            db.session.commit()
+
+        self._login_admin()
+        with patch(
+            "app.email_notifications.urlopen",
+            return_value=self._accepted_response(),
+        ) as send:
+            first = self._moderate("verify")
+            repeated = self._moderate("verify")
+
+        self.assertEqual(first.status_code, 302)
+        self.assertEqual(repeated.status_code, 302)
+        send.assert_called_once()
+
+    def test_verification_email_failure_does_not_undo_verification(self):
+        with self.app.app_context():
+            student = db.session.get(User, self.student_id)
+            student.is_verified = False
+            db.session.commit()
+
+        self._login_admin()
+        with self.assertLogs("app", level="WARNING"):
+            with patch(
+                "app.email_notifications.urlopen",
+                side_effect=URLError("private provider response"),
+            ) as send:
+                response = self._moderate("verify")
+
+        self.assertEqual(response.status_code, 302)
+        send.assert_called_once()
+        with self.app.app_context():
+            self.assertTrue(db.session.get(User, self.student_id).is_verified)
+        with self.client.session_transaction() as session:
+            flashes = session.get("_flashes", [])
+        self.assertIn(("success", "User verification updated."), flashes)
+        self.assertIn(
+            (
+                "warning",
+                "The verification notification email could not be sent. "
+                "Check the Resend configuration and server logs.",
+            ),
+            flashes,
+        )
+
+    def test_verifying_suspended_student_does_not_activate_account(self):
+        with self.app.app_context():
+            student = db.session.get(User, self.student_id)
+            student.is_verified = False
+            student.is_active = False
+            db.session.commit()
+
+        self._login_admin()
+        with patch(
+            "app.email_notifications.urlopen",
+            return_value=self._accepted_response(),
+        ) as send:
+            response = self._moderate("verify")
+
+        self.assertEqual(response.status_code, 302)
+        payload = json.loads(send.call_args.args[0].data)
+        self.assertIn("remains suspended", payload["text"])
+        self.assertNotIn("You can now access the marketplace", payload["text"])
+        with self.app.app_context():
+            student = db.session.get(User, self.student_id)
+            self.assertTrue(student.is_verified)
+            self.assertFalse(student.is_active)
 
     def test_reactivation_email_failure_does_not_undo_activation(self):
         with self.app.app_context():
@@ -231,26 +380,29 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         self._login_admin()
         with self.assertLogs("app", level="WARNING") as captured_logs:
             with patch(
-                "app.email_notifications.mail.send",
-                side_effect=smtplib.SMTPServerDisconnected(
-                    "private SMTP response must not be logged"
-                ),
+                "app.email_notifications.urlopen",
+                side_effect=TimeoutError("private provider response must not be logged"),
             ) as send:
                 response = self._moderate("activate")
 
         self.assertEqual(response.status_code, 302)
         send.assert_called_once()
         output = "\n".join(captured_logs.output)
-        self.assertIn("Account reactivation email failed", output)
-        self.assertNotIn("private SMTP response", output)
+        self.assertIn("Email API request failed", output)
+        self.assertNotIn("private provider response", output)
         with self.client.session_transaction() as session:
+            flashes = session.get("_flashes", [])
+            self.assertIn(
+                ("success", "User activated."),
+                flashes,
+            )
             self.assertIn(
                 (
                     "warning",
-                    "User activated, but the reactivation email could not be sent. "
-                    "Check the mail configuration and server logs.",
+                    "The activation notification email could not be sent. "
+                    "Check the Resend configuration and server logs.",
                 ),
-                session.get("_flashes", []),
+                flashes,
             )
         with self.app.app_context():
             self.assertTrue(db.session.get(User, self.student_id).is_active)
@@ -261,10 +413,40 @@ class SuspendedAccountSupportTests(unittest.TestCase):
             student.university_email = "not-an-email"
             db.session.commit()
 
-            with patch("app.email_notifications.mail.send") as send:
+            with patch("app.email_notifications.urlopen") as send:
                 self.assertFalse(notify_student_account_activated(student))
 
         send.assert_not_called()
+
+    def test_missing_resend_configuration_skips_request(self):
+        self.app.config.update(RESEND_API_KEY=None, RESEND_FROM=None)
+
+        with self.app.app_context():
+            student = db.session.get(User, self.student_id)
+            with patch("app.email_notifications.urlopen") as send:
+                self.assertFalse(notify_student_account_activated(student))
+
+        send.assert_not_called()
+
+    def test_resend_authentication_errors_are_reported_as_failures(self):
+        with self.app.app_context():
+            student = db.session.get(User, self.student_id)
+            for status in (401, 403):
+                with self.subTest(status=status):
+                    error = HTTPError(
+                        "https://api.resend.com/emails",
+                        status,
+                        "Rejected",
+                        None,
+                        None,
+                    )
+                    with patch(
+                        "app.email_notifications.urlopen",
+                        side_effect=error,
+                    ):
+                        self.assertFalse(
+                            notify_student_account_activated(student)
+                        )
 
     def test_reactivated_student_can_log_in_again(self):
         with self.app.app_context():
@@ -273,7 +455,10 @@ class SuspendedAccountSupportTests(unittest.TestCase):
             db.session.commit()
 
         self._login_admin()
-        with patch("app.email_notifications.mail.send"):
+        with patch(
+            "app.email_notifications.urlopen",
+            return_value=self._accepted_response(),
+        ):
             self._moderate("activate")
 
         response = self.client.post(
@@ -322,7 +507,7 @@ class SuspendedAccountSupportTests(unittest.TestCase):
             self.assertFalse(db.session.get(User, self.student_id).is_active)
 
         self._login_admin()
-        with patch("app.email_notifications.mail.send") as send:
+        with patch("app.email_notifications.urlopen") as send:
             unsupported = self._moderate("delete")
 
         self.assertEqual(unsupported.status_code, 400)

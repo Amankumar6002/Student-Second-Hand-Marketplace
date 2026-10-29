@@ -9,6 +9,7 @@ from flask_login import current_user
 from ..auth.routes import active_required
 from ..email_notifications import (
     notify_account_suspended,
+    notify_student_account_verified,
     notify_student_account_activated,
     notify_student_listing_moderated,
 )
@@ -153,6 +154,7 @@ def users():
 def moderate_user(user_id, action):
     user = User.query.get_or_404(user_id)
     was_active = user.is_active
+    was_verified = user.is_verified
     if action == "verify":
         user.is_verified = True
     elif action == "suspend":
@@ -163,20 +165,26 @@ def moderate_user(user_id, action):
         return render_template("error.html", code=400, message="Unknown user moderation action."), 400
 
     db.session.commit()
-    if action == "suspend" and was_active and user.role == "student":
-        if notify_account_suspended(user):
-            flash("User suspended and notification email sent.", "success")
-        else:
+    if action == "suspend" and user.role == "student":
+        flash("User suspended.", "success")
+        if was_active and not notify_account_suspended(user):
             flash(
-                "User suspended, but the notification email could not be sent. Check the mail configuration and server logs.",
+                "The suspension notification email could not be sent. Check the Resend configuration and server logs.",
                 "warning",
             )
-    elif action == "activate" and not was_active and user.role == "student":
-        if notify_student_account_activated(user):
-            flash("User activated and reactivation email sent.", "success")
-        else:
+    elif action == "activate" and user.role == "student":
+        flash("User activated.", "success")
+        if not was_active and not notify_student_account_activated(user):
             flash(
-                "User activated, but the reactivation email could not be sent. Check the mail configuration and server logs.",
+                "The activation notification email could not be sent. Check the Resend configuration and server logs.",
+                "warning",
+            )
+    elif action == "verify" and user.role == "student":
+        flash("User verification updated.", "success")
+        if not was_verified and not notify_student_account_verified(user):
+            flash(
+                "The verification notification email could not be sent. "
+                "Check the Resend configuration and server logs.",
                 "warning",
             )
     else:

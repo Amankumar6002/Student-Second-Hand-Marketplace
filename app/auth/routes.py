@@ -10,6 +10,10 @@ from requests.exceptions import RequestException
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 
+from ..email_notifications import (
+    notify_admin_new_student_registration,
+    notify_student_registered,
+)
 from ..extensions import db
 from ..models import User
 
@@ -48,6 +52,17 @@ def _google_configuration_error():
         + " and ".join(missing_settings)
         + " in the project-root .env file or environment, then restart the app."
     )
+
+
+def _notify_new_student_registration(user):
+    welcome_sent = notify_student_registered(user)
+    admin_sent = notify_admin_new_student_registration(user)
+    if not welcome_sent or not admin_sent:
+        flash(
+            "One or more registration notification emails could not be sent. "
+            "Your account was still created successfully.",
+            "warning",
+        )
 
 
 def _finish_google_login(user):
@@ -110,6 +125,7 @@ def register():
                 flash("An account with those details already exists.", "danger")
                 return render_template("auth/register.html")
             flash("Account created. An administrator will verify your student status.", "success")
+            _notify_new_student_registration(user)
             return redirect(url_for("auth.login"))
     return render_template("auth/register.html")
 
@@ -231,6 +247,7 @@ def google_callback():
             session.pop("google_login_next", None)
             return _google_login_error("This email is already linked to another Google account.")
 
+    created_new_account = user is None
     try:
         if user is None:
             user = User(
@@ -253,6 +270,7 @@ def google_callback():
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
+        created_new_account = False
         user = User.query.filter_by(google_subject=subject).first()
         if user is None:
             user = User.query.filter_by(university_email=email).first()
@@ -270,6 +288,8 @@ def google_callback():
             current_app.logger.warning("Google account could not be saved because of an integrity conflict")
             session.pop("google_login_next", None)
             return _google_login_error("We could not create or link your account. Please try again.")
+    if created_new_account:
+        _notify_new_student_registration(user)
     return _finish_google_login(user)
 
 

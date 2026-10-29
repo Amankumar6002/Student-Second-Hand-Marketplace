@@ -1,7 +1,8 @@
-import smtplib
+import json
 import unittest
 from decimal import Decimal
-from unittest.mock import patch
+from urllib.error import URLError
+from unittest.mock import Mock, patch
 
 from app import create_app
 from app.extensions import db
@@ -16,6 +17,10 @@ class ListingEmailTestConfig(Config):
     MAIL_USERNAME = "admin@example.com"
     MAIL_PASSWORD = "test-password"
     MAIL_DEFAULT_SENDER = "admin@example.com"
+    ADMIN_NOTIFICATION_EMAIL = "admin@example.com"
+    SUPPORT_EMAIL = None
+    RESEND_API_KEY = "re_test_key"
+    RESEND_FROM = "notifications@example.com"
 
 
 class ListingEmailNotificationTests(unittest.TestCase):
@@ -76,27 +81,47 @@ class ListingEmailNotificationTests(unittest.TestCase):
             follow_redirects=False,
         )
 
+    @staticmethod
+    def _accepted_response():
+        response = Mock(status=200)
+        response.read.return_value = b'{"id":"email-test-id"}'
+        context = Mock()
+        context.__enter__ = Mock(return_value=response)
+        context.__exit__ = Mock(return_value=False)
+        return context
+
     def test_listing_is_committed_pending_before_admin_email(self):
         self._login("student@klu.ac.in", "StudentPass123")
 
-        with patch("app.email_notifications.mail.send") as send:
-            def assert_listing_was_committed(message):
+        with patch(
+            "app.email_notifications.urlopen",
+            return_value=self._accepted_response(),
+        ) as send:
+            def assert_listing_was_committed(request, timeout):
                 with self.app.app_context():
                     product = Product.query.one()
                     self.assertEqual(product.approval_status, "pending")
+                self.assertEqual(timeout, 8)
+                return self._accepted_response()
 
             send.side_effect = assert_listing_was_committed
             response = self._create_listing()
 
         self.assertEqual(response.status_code, 302)
         send.assert_called_once()
-        message = send.call_args.args[0]
-        self.assertEqual(message.recipients, ["admin@example.com"])
-        self.assertIn("Test Textbook", message.body)
-        self.assertIn("250.00", message.body)
-        self.assertIn("Books", message.body)
-        self.assertIn("Test Student", message.body)
-        self.assertIn("/admin/products", message.body)
+        request = send.call_args.args[0]
+        payload = json.loads(request.data)
+        self.assertEqual(request.full_url, "https://api.resend.com/emails")
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(request.get_header("Authorization"), "Bearer re_test_key")
+        self.assertEqual(payload["to"], ["admin@example.com"])
+        self.assertEqual(payload["from"], "notifications@example.com")
+        self.assertEqual(payload["subject"], "Student listing waiting for approval")
+        self.assertIn("Test Textbook", payload["text"])
+        self.assertIn("250.00", payload["text"])
+        self.assertIn("Books", payload["text"])
+        self.assertIn("Test Student", payload["text"])
+        self.assertIn("/admin/products", payload["text"])
         with self.app.app_context():
             product = Product.query.one()
             self.assertEqual(product.approval_status, "pending")
@@ -107,14 +132,17 @@ class ListingEmailNotificationTests(unittest.TestCase):
 
         with self.assertLogs("app", level="WARNING") as captured_logs:
             with patch(
-                "app.email_notifications.mail.send",
-                side_effect=OSError("SMTP credentials must not be logged"),
+                "app.email_notifications.urlopen",
+                side_effect=URLError("private provider response must not be logged"),
             ) as send:
                 response = self._create_listing()
                 self.assertEqual(response.status_code, 302)
                 self.client.get(response.headers["Location"])
                 send.assert_called_once()
-        self.assertNotIn("SMTP credentials must not be logged", "\n".join(captured_logs.output))
+        self.assertNotIn(
+            "private provider response must not be logged",
+            "\n".join(captured_logs.output),
+        )
 
         with self.app.app_context():
             products = Product.query.all()
@@ -127,7 +155,10 @@ class ListingEmailNotificationTests(unittest.TestCase):
         with self.app.app_context():
             product_id = Product.query.one().id
 
-        with patch("app.email_notifications.mail.send") as send:
+        with patch(
+            "app.email_notifications.urlopen",
+            return_value=self._accepted_response(),
+        ) as send:
             response = self.client.post(
                 f"/product/{product_id}/edit",
                 data={
@@ -169,7 +200,10 @@ class ListingEmailNotificationTests(unittest.TestCase):
 
         self.client.get("/logout")
         self._login("admin@klu.ac.in", "AdminPass123")
-        with patch("app.email_notifications.mail.send") as send:
+        with patch(
+            "app.email_notifications.urlopen",
+            return_value=self._accepted_response(),
+        ) as send:
             approved = self.client.post(f"/admin/products/{product_id}/approve")
             repeated_approval = self.client.post(f"/admin/products/{product_id}/approve")
             rejected = self.client.post(f"/admin/products/{product_id}/reject")
@@ -178,26 +212,28 @@ class ListingEmailNotificationTests(unittest.TestCase):
         self.assertEqual(repeated_approval.status_code, 302)
         self.assertEqual(rejected.status_code, 302)
         self.assertEqual(send.call_count, 2)
-        approval_message = send.call_args_list[0].args[0]
-        self.assertEqual(approval_message.recipients, ["student@klu.ac.in"])
-        self.assertIn("approved", approval_message.subject)
-        self.assertIn("Moderated Textbook", approval_message.body)
-        rejection_message = send.call_args_list[1].args[0]
-        self.assertEqual(rejection_message.recipients, ["student@klu.ac.in"])
-        self.assertIn("rejected", rejection_message.subject)
-        self.assertIn("Moderated Textbook", rejection_message.body)
+        approval_request = send.call_args_list[0].args[0]
+        approval_payload = json.loads(approval_request.data)
+        self.assertEqual(approval_payload["to"], ["student@klu.ac.in"])
+        self.assertIn("approved", approval_payload["subject"])
+        self.assertIn("Moderated Textbook", approval_payload["text"])
+        rejection_request = send.call_args_list[1].args[0]
+        rejection_payload = json.loads(rejection_request.data)
+        self.assertEqual(rejection_payload["to"], ["student@klu.ac.in"])
+        self.assertIn("rejected", rejection_payload["subject"])
+        self.assertIn("Moderated Textbook", rejection_payload["text"])
         with self.app.app_context():
             self.assertEqual(
                 db.session.get(Product, product_id).approval_status,
                 "rejected",
             )
 
-    def test_smtp_disconnect_is_logged_without_undoing_approval_or_resending(self):
+    def test_provider_failure_is_logged_without_undoing_approval_or_resending(self):
         with self.app.app_context():
             product = Product(
                 seller_id=User.query.filter_by(role="student").one().id,
                 category_id=self.category_id,
-                title="SMTP Failure Textbook",
+                title="Resend Failure Textbook",
                 description="Description",
                 price=Decimal("100.00"),
                 listing_type="sale",
@@ -211,8 +247,8 @@ class ListingEmailNotificationTests(unittest.TestCase):
         self._login("admin@klu.ac.in", "AdminPass123")
         with self.assertLogs("app", level="WARNING") as captured_logs:
             with patch(
-                "app.email_notifications.mail.send",
-                side_effect=smtplib.SMTPServerDisconnected(),
+                "app.email_notifications.urlopen",
+                side_effect=URLError("temporary network failure"),
             ) as send:
                 response = self.client.post(f"/admin/products/{product_id}/approve")
                 repeated_response = self.client.post(f"/admin/products/{product_id}/approve")
@@ -221,14 +257,38 @@ class ListingEmailNotificationTests(unittest.TestCase):
         self.assertEqual(repeated_response.status_code, 302)
         send.assert_called_once()
         log_output = "\n".join(captured_logs.output)
-        self.assertIn("SMTP server disconnected", log_output)
-        self.assertIn("Gmail App Password", log_output)
-        self.assertNotIn("test-password", log_output)
+        self.assertIn("Email API request failed", log_output)
+        self.assertNotIn("re_test_key", log_output)
         with self.app.app_context():
             self.assertEqual(
                 db.session.get(Product, product_id).approval_status,
                 "approved",
             )
+
+    def test_network_failure_does_not_report_provider_acceptance(self):
+        from app.email_notifications import notify_student_listing_moderated
+
+        with self.app.test_request_context("/"):
+            product = Product(
+                seller_id=User.query.filter_by(role="student").one().id,
+                category_id=self.category_id,
+                title="Rejected Textbook",
+                description="Description",
+                price=Decimal("100.00"),
+                listing_type="sale",
+                condition="Good",
+                location="Campus",
+            )
+            db.session.add(product)
+            db.session.commit()
+
+            with patch(
+                "app.email_notifications.urlopen",
+                side_effect=URLError("temporary network failure"),
+            ):
+                self.assertFalse(
+                    notify_student_listing_moderated(product, "rejected")
+                )
 
     def test_admin_moderation_still_requires_csrf_token(self):
         with self.app.app_context():

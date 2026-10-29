@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from flask import redirect
 from sqlalchemy import text
@@ -16,6 +16,8 @@ class TestConfig(Config):
     WTF_CSRF_ENABLED = False
     GOOGLE_CLIENT_ID = "test-google-client-id"
     GOOGLE_CLIENT_SECRET = "test-google-client-secret"
+    RESEND_API_KEY = None
+    RESEND_FROM = None
 
 
 class FakeGoogleClient:
@@ -79,6 +81,14 @@ class GoogleAuthTests(unittest.TestCase):
         fake_google = FakeGoogleClient(profile=profile)
         with patch("app.auth.routes._google_client", return_value=fake_google):
             return self.client.get("/login/google/callback")
+
+    @staticmethod
+    def accepted_email_response():
+        response = Mock(status=200)
+        response.read.return_value = b'{"id":"email-test-id"}'
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        return response
 
     def test_existing_email_password_login_and_registration_still_work(self):
         self.add_user()
@@ -167,6 +177,30 @@ class GoogleAuthTests(unittest.TestCase):
         self.assertEqual(self.user_count(), 1)
         with self.client.session_transaction() as session:
             self.assertEqual(session["_user_id"], str(user_id))
+
+    def test_new_google_student_gets_registration_emails_only_once(self):
+        self.app.config.update(
+            RESEND_API_KEY="re_test_key",
+            RESEND_FROM="notifications@example.com",
+            ADMIN_NOTIFICATION_EMAIL="admin-notifications@example.com",
+        )
+        profile = {
+            "sub": "google-sub-registration-notice",
+            "email": "newgoogle@klu.ac.in",
+            "email_verified": True,
+            "name": "New Google Student",
+        }
+        with patch(
+            "app.email_notifications.urlopen",
+            return_value=self.accepted_email_response(),
+        ) as send:
+            first_response = self.callback_with_profile(profile)
+            self.assertEqual(send.call_count, 2)
+            repeated_response = self.callback_with_profile(profile)
+
+        self.assertEqual(first_response.status_code, 302)
+        self.assertEqual(repeated_response.status_code, 302)
+        self.assertEqual(send.call_count, 2)
 
     def test_verified_email_links_existing_account_but_unverified_email_does_not(self):
         user_id = self.add_user()
