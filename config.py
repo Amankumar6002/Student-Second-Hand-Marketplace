@@ -40,3 +40,9 @@ class Config:
     )
     RESEND_API_KEY = os.getenv("RESEND_API_KEY")
     RESEND_FROM = os.getenv("RESEND_FROM")
+    RESEND_TEST_MODE = (
+        os.getenv("RESEND_TEST_MODE", "false").strip().lower() == "true"
+    )
+    RESEND_TEST_RECIPIENT = (
+        os.getenv("RESEND_TEST_RECIPIENT") or "delivered@resend.dev"
+    )

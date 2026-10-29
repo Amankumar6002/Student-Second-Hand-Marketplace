@@ -257,7 +257,7 @@ class ListingEmailNotificationTests(unittest.TestCase):
         self.assertEqual(repeated_response.status_code, 302)
         send.assert_called_once()
         log_output = "\n".join(captured_logs.output)
-        self.assertIn("Email API request failed", log_output)
+        self.assertIn("Resend request failed", log_output)
         self.assertNotIn("re_test_key", log_output)
         with self.app.app_context():
             self.assertEqual(

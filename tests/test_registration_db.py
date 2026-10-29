@@ -25,6 +25,7 @@ class RegistrationDatabaseTests(unittest.TestCase):
             RESEND_API_KEY="re_test_key",
             RESEND_FROM="notifications@example.com",
             ADMIN_NOTIFICATION_EMAIL="admin-notifications@example.com",
+            PUBLIC_BASE_URL="https://marketplace.example.test",
         )
         self.client = self.app.test_client()
 
@@ -90,6 +91,10 @@ class RegistrationDatabaseTests(unittest.TestCase):
         )
         self.assertIn("newstudent@klu.ac.in", admin_payload["text"])
         self.assertIn("Registration Date:", admin_payload["text"])
+        self.assertIn(
+            "https://marketplace.example.test/admin/users",
+            admin_payload["text"],
+        )
         self.assertTrue(all(call.kwargs["timeout"] == 8 for call in send.call_args_list))
         with self.app.app_context():
             user = User.query.filter_by(university_email='newstudent@klu.ac.in').first()

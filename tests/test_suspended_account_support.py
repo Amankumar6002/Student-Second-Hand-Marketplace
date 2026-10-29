@@ -1,10 +1,14 @@
 import json
+from io import BytesIO
 import unittest
 from urllib.error import HTTPError, URLError
 from unittest.mock import Mock, patch
 
 from app import create_app
-from app.email_notifications import notify_student_account_activated
+from app.email_notifications import (
+    notify_admin_new_student_registration,
+    notify_student_account_activated,
+)
 from app.extensions import db
 from app.models import User
 from config import Config
@@ -137,7 +141,7 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         send.assert_called_once()
         output = "\n".join(captured_logs.output)
-        self.assertIn("Email API request failed", output)
+        self.assertIn("Resend request failed", output)
         self.assertNotIn("private provider response", output)
         with self.client.session_transaction() as session:
             flashes = session.get("_flashes", [])
@@ -388,7 +392,7 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         send.assert_called_once()
         output = "\n".join(captured_logs.output)
-        self.assertIn("Email API request failed", output)
+        self.assertIn("Resend request timed out", output)
         self.assertNotIn("private provider response", output)
         with self.client.session_transaction() as session:
             flashes = session.get("_flashes", [])
@@ -419,8 +423,55 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         send.assert_not_called()
 
     def test_missing_resend_configuration_skips_request(self):
-        self.app.config.update(RESEND_API_KEY=None, RESEND_FROM=None)
+        cases = (
+            {"RESEND_API_KEY": None},
+            {"RESEND_FROM": None},
+        )
+        for missing_setting in cases:
+            with self.subTest(missing_setting=next(iter(missing_setting))):
+                self.app.config.update(
+                    RESEND_API_KEY="re_test_key",
+                    RESEND_FROM="notifications@example.com",
+                )
+                self.app.config.update(missing_setting)
 
+                with self.app.app_context():
+                    student = db.session.get(User, self.student_id)
+                    with patch("app.email_notifications.urlopen") as send:
+                        self.assertFalse(
+                            notify_student_account_activated(student)
+                        )
+
+                send.assert_not_called()
+
+    def test_test_mode_forces_resend_test_sender_and_recipient(self):
+        self.app.config.update(
+            RESEND_TEST_MODE=True,
+            RESEND_TEST_RECIPIENT="delivered@resend.dev",
+            RESEND_FROM="production@example.com",
+        )
+
+        with self.app.app_context():
+            student = db.session.get(User, self.student_id)
+            with patch(
+                "app.email_notifications.urlopen",
+                return_value=self._accepted_response(),
+            ) as send:
+                self.assertTrue(notify_student_account_activated(student))
+
+        request = send.call_args.args[0]
+        payload = json.loads(request.data)
+        self.assertEqual(request.full_url, "https://api.resend.com/emails")
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(payload["from"], "onboarding@resend.dev")
+        self.assertEqual(payload["to"], ["delivered@resend.dev"])
+        self.assertEqual(send.call_args.kwargs["timeout"], 8)
+
+    def test_test_mode_rejects_non_resend_recipient_override(self):
+        self.app.config.update(
+            RESEND_TEST_MODE=True,
+            RESEND_TEST_RECIPIENT="student@klu.ac.in",
+        )
         with self.app.app_context():
             student = db.session.get(User, self.student_id)
             with patch("app.email_notifications.urlopen") as send:
@@ -428,25 +479,81 @@ class SuspendedAccountSupportTests(unittest.TestCase):
 
         send.assert_not_called()
 
+    def test_test_mode_redacts_student_addresses_from_email_body(self):
+        self.app.config.update(
+            RESEND_TEST_MODE=True,
+            RESEND_TEST_RECIPIENT="delivered@resend.dev",
+        )
+        with self.app.test_request_context("/"):
+            student = db.session.get(User, self.student_id)
+            with patch(
+                "app.email_notifications.urlopen",
+                return_value=self._accepted_response(),
+            ) as send:
+                self.assertTrue(
+                    notify_admin_new_student_registration(student)
+                )
+
+        payload = json.loads(send.call_args.args[0].data)
+        self.assertEqual(payload["to"], ["delivered@resend.dev"])
+        self.assertNotIn("student@klu.ac.in", payload["text"])
+        self.assertIn("[redacted email]", payload["text"])
+
+    def test_wrapped_network_timeout_is_logged_without_error_details(self):
+        with self.app.app_context():
+            student = db.session.get(User, self.student_id)
+            with self.assertLogs("app", level="WARNING") as logs:
+                with patch(
+                    "app.email_notifications.urlopen",
+                    side_effect=URLError(
+                        TimeoutError("private socket detail")
+                    ),
+                ):
+                    self.assertFalse(
+                        notify_student_account_activated(student)
+                    )
+
+        log_output = "\n".join(logs.output)
+        self.assertIn("Resend request timed out", log_output)
+        self.assertNotIn("private socket detail", log_output)
+
     def test_resend_authentication_errors_are_reported_as_failures(self):
         with self.app.app_context():
             student = db.session.get(User, self.student_id)
             for status in (401, 403):
                 with self.subTest(status=status):
+                    error_detail = {
+                        "name": (
+                            "invalid_api_key"
+                            if status == 401
+                            else "validation_error"
+                        ),
+                        "message": (
+                            "Sender notifications@example.com is not permitted "
+                            f"for recipient student@klu.ac.in; key re_test_key"
+                        ),
+                    }
                     error = HTTPError(
                         "https://api.resend.com/emails",
                         status,
                         "Rejected",
                         None,
-                        None,
+                        BytesIO(json.dumps(error_detail).encode("utf-8")),
                     )
-                    with patch(
-                        "app.email_notifications.urlopen",
-                        side_effect=error,
-                    ):
-                        self.assertFalse(
-                            notify_student_account_activated(student)
-                        )
+                    with self.assertLogs("app", level="WARNING") as logs:
+                        with patch(
+                            "app.email_notifications.urlopen",
+                            side_effect=error,
+                        ):
+                            self.assertFalse(
+                                notify_student_account_activated(student)
+                            )
+                    log_output = "\n".join(logs.output)
+                    self.assertIn(f"HTTP {status}", log_output)
+                    self.assertIn(error_detail["name"], log_output)
+                    self.assertIn("is not permitted", log_output)
+                    self.assertNotIn("student@klu.ac.in", log_output)
+                    self.assertNotIn("re_test_key", log_output)
 
     def test_reactivated_student_can_log_in_again(self):
         with self.app.app_context():
