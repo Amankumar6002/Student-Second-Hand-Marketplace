@@ -1,10 +1,8 @@
-from email.utils import parseaddr
-import json
 import re
-from urllib.error import HTTPError, URLError
+from email.utils import parseaddr
 from urllib.parse import urljoin
-from urllib.request import Request, urlopen
 
+import requests
 from email_validator import EmailNotValidError, validate_email
 from flask import current_app, url_for
 
@@ -15,27 +13,108 @@ RESEND_TEST_RECIPIENT = "delivered@resend.dev"
 
 def _absolute_url(endpoint, **values):
     base_url = current_app.config["PUBLIC_BASE_URL"].rstrip("/") + "/"
-    return urljoin(
-        base_url,
-        url_for(endpoint, **values).lstrip("/"),
+    return urljoin(base_url, url_for(endpoint, **values).lstrip("/"))
+
+
+def _sanitize_error(value, secrets_to_redact=()):
+    text = str(value or "")
+
+    for secret in secrets_to_redact:
+        if isinstance(secret, str) and secret:
+            text = text.replace(secret, "[redacted]")
+
+    text = re.sub(r"(?i)\bbearer\s+\S+", "Bearer [redacted]", text)
+    text = re.sub(
+        r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}",
+        "[email]",
+        text,
     )
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", text)
+
+    return " ".join(text.split())[:400] or "No safe error detail returned"
 
 
 def _send_email(recipient, subject, body, context):
     api_key = current_app.config.get("RESEND_API_KEY")
-    sender = current_app.config.get("RESEND_FROM")
+    api_key = api_key.strip() if isinstance(api_key, str) else ""
+
+    if not api_key or "\r" in api_key or "\n" in api_key:
+        current_app.logger.warning(
+            "Email skipped for %s: RESEND_API_KEY is missing or invalid",
+            context,
+        )
+        return False
+
+    raw_test_mode = current_app.config.get("RESEND_TEST_MODE", False)
     test_mode = (
-        str(current_app.config.get("RESEND_TEST_MODE", False)).lower() == "true"
+        raw_test_mode is True
+        or str(raw_test_mode).strip().lower() == "true"
     )
 
-    if not isinstance(recipient, str) or not recipient.strip():
-        if not test_mode:
+    if test_mode:
+        if recipient is not None and (
+            not isinstance(recipient, str) or recipient.strip()
+        ):
+            if not isinstance(recipient, str):
+                current_app.logger.warning(
+                    "Email skipped for %s: recipient is invalid",
+                    context,
+                )
+                return False
+
+            try:
+                validate_email(
+                    recipient.strip(),
+                    check_deliverability=False,
+                )
+            except EmailNotValidError:
+                current_app.logger.warning(
+                    "Email skipped for %s: recipient is invalid",
+                    context,
+                )
+                return False
+
+        sender = RESEND_TEST_SENDER
+        recipient = (
+            current_app.config.get("RESEND_TEST_RECIPIENT")
+            or RESEND_TEST_RECIPIENT
+        )
+
+        try:
+            recipient = validate_email(
+                recipient,
+                check_deliverability=False,
+            ).normalized
+        except (EmailNotValidError, TypeError):
             current_app.logger.warning(
-                "Email skipped for %s: recipient is missing", context
+                "Email skipped for %s: test recipient is invalid",
+                context,
             )
             return False
-        recipient = None
+
+        if not recipient.casefold().endswith("@resend.dev"):
+            current_app.logger.warning(
+                "Email skipped for %s: test recipient must use "
+                "Resend's resend.dev test domain",
+                context,
+            )
+            return False
+
+        # Do not expose real student or administrator addresses in test emails.
+        body = re.sub(
+            r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}",
+            "[redacted email]",
+            body,
+        )
+
     else:
+        if not isinstance(recipient, str) or not recipient.strip():
+            current_app.logger.warning(
+                "Email skipped for %s: recipient is missing",
+                context,
+            )
+            return False
+
         try:
             recipient = validate_email(
                 recipient.strip(),
@@ -43,64 +122,23 @@ def _send_email(recipient, subject, body, context):
             ).normalized
         except EmailNotValidError:
             current_app.logger.warning(
-                "Email skipped for %s: recipient is invalid", context
-            )
-            return False
-
-    if (
-        not isinstance(api_key, str)
-        or not api_key.strip()
-        or "\r" in api_key
-        or "\n" in api_key
-    ):
-        current_app.logger.warning(
-            "Email skipped for %s: RESEND_API_KEY is missing or invalid",
-            context,
-        )
-        return False
-
-    if test_mode:
-        configured_test_recipient = current_app.config.get(
-            "RESEND_TEST_RECIPIENT", RESEND_TEST_RECIPIENT
-        )
-        try:
-            validated_test_recipient = validate_email(
-                configured_test_recipient,
-                check_deliverability=False,
-            ).normalized
-        except (EmailNotValidError, TypeError):
-            current_app.logger.warning(
-                "Email skipped for %s: RESEND_TEST_RECIPIENT is missing or invalid",
+                "Email skipped for %s: recipient is invalid",
                 context,
             )
             return False
-        if not validated_test_recipient.casefold().endswith("@resend.dev"):
+
+        sender = current_app.config.get("RESEND_FROM")
+        sender = sender.strip() if isinstance(sender, str) else ""
+
+        if not sender or "\r" in sender or "\n" in sender:
             current_app.logger.warning(
-                "Email skipped for %s: test recipient must use Resend's "
-                "resend.dev test domain",
+                "Email skipped for %s: RESEND_FROM is missing or invalid",
                 context,
             )
             return False
-        recipient = validated_test_recipient
-        sender = RESEND_TEST_SENDER
-        body = re.sub(
-            r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}",
-            "[redacted email]",
-            body,
-        )
-    elif (
-        not isinstance(sender, str)
-        or not sender.strip()
-        or "\r" in sender
-        or "\n" in sender
-    ):
-        current_app.logger.warning(
-            "Email skipped for %s: RESEND_FROM is missing",
-            context,
-        )
-        return False
-    else:
+
         sender_email = parseaddr(sender)[1]
+
         try:
             validated_sender = validate_email(
                 sender_email,
@@ -112,118 +150,80 @@ def _send_email(recipient, subject, body, context):
                 context,
             )
             return False
+
         if validated_sender.casefold().endswith("@resend.dev"):
             current_app.logger.warning(
-                "Email skipped for %s: the Resend testing sender is only "
-                "allowed when RESEND_TEST_MODE=true",
+                "Email skipped for %s: use a production-authorized "
+                "sender when test mode is disabled",
                 context,
             )
             return False
 
     payload = {
-        "from": sender.strip(),
+        "from": sender,
         "to": [recipient],
         "subject": subject,
         "text": body,
     }
 
-    request = Request(
-        "https://api.resend.com/emails",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-
     try:
-        with urlopen(request, timeout=8) as response:
-            response.read()
-
-            if 200 <= response.status < 300:
-                current_app.logger.info(
-                    "Email accepted by provider for %s", context
-                )
-                return True
-
-            current_app.logger.warning(
-                "Email API returned HTTP %s for %s",
-                response.status,
-                context,
-            )
-
-    except HTTPError as error:
-        error_name, error_message = _resend_error_details(
-            error,
-            secrets_to_redact=(api_key, recipient),
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "User-Agent": "student-second-hand-marketplace/1.0",
+            },
+            json=payload,
+            timeout=8,
         )
+
+        if 200 <= response.status_code < 300:
+            current_app.logger.info(
+                "Resend accepted email request for %s (HTTP %s)",
+                context,
+                response.status_code,
+            )
+            return True
+
+        try:
+            error_data = response.json()
+        except ValueError:
+            error_data = {}
+
+        error_name = (
+            error_data.get("name")
+            or error_data.get("type")
+            or "unknown"
+        )
+        error_message = (
+            error_data.get("message")
+            or error_data.get("error")
+            or "No JSON error detail returned"
+        )
+
         current_app.logger.warning(
             "Resend rejected %s (HTTP %s, error=%s): %s",
             context,
-            error.code,
-            error_name,
-            error_message,
+            response.status_code,
+            _sanitize_error(error_name, (api_key,)),
+            _sanitize_error(error_message, (api_key, recipient)),
         )
-    except TimeoutError:
-        current_app.logger.warning("Resend request timed out for %s", context)
-    except URLError as error:
-        if isinstance(error.reason, TimeoutError):
-            current_app.logger.warning(
-                "Resend request timed out for %s",
-                context,
-            )
-        else:
-            current_app.logger.warning(
-                "Resend request failed for %s (%s)",
-                context,
-                type(error).__name__,
-            )
-    except (OSError, ValueError, TypeError) as error:
+        return False
+
+    except requests.Timeout:
+        current_app.logger.warning(
+            "Resend request timed out for %s",
+            context,
+        )
+        return False
+
+    except requests.RequestException as error:
         current_app.logger.warning(
             "Resend request failed for %s (%s)",
             context,
             type(error).__name__,
         )
-
-    return False
-
-
-def _resend_error_details(error, secrets_to_redact=()):
-    error_name = "unknown"
-    error_message = "No safe error detail was returned"
-    try:
-        response_data = json.loads(error.read(4096).decode("utf-8"))
-    except (AttributeError, OSError, UnicodeDecodeError, ValueError):
-        response_data = None
-
-    if isinstance(response_data, dict):
-        error_name = (
-            response_data.get("name")
-            or response_data.get("type")
-            or error_name
-        )
-        error_message = (
-            response_data.get("message")
-            or response_data.get("error")
-            or error_message
-        )
-
-    def sanitize(value):
-        text = str(value)
-        for secret in secrets_to_redact:
-            if isinstance(secret, str) and secret:
-                text = text.replace(secret, "[redacted]")
-        text = re.sub(r"(?i)\bbearer\s+\S+", "Bearer [redacted]", text)
-        text = re.sub(
-            r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}",
-            "[email]",
-            text,
-        )
-        text = re.sub(r"[\x00-\x1f\x7f]+", " ", text)
-        return " ".join(text.split())[:400] or "No safe error detail was returned"
-
-    return sanitize(error_name), sanitize(error_message)
+        return False
 
 
 def _send_listing_email(product_id, recipient, subject, body):
@@ -267,7 +267,8 @@ def notify_admin_listing_submitted(product):
 def notify_student_listing_moderated(product, approval_status):
     seller_email = product.seller.university_email
     listing_url = _absolute_url(
-        "products.detail", product_id=product.id
+        "products.detail",
+        product_id=product.id,
     )
 
     body = (
@@ -355,6 +356,7 @@ def notify_student_account_activated(user):
 
 def notify_student_registered(user):
     student_name = " ".join((user.name or "").split()) or "there"
+
     body = (
         f"Hello {student_name},\n\n"
         "Welcome to Student Second-Hand Marketplace!\n\n"
@@ -366,6 +368,7 @@ def notify_student_registered(user):
         "Regards,\n"
         "Student Second-Hand Marketplace Team\n"
     )
+
     return _send_email(
         user.university_email,
         "Your Student Second-Hand Marketplace Account Has Been Created",
@@ -375,8 +378,15 @@ def notify_student_registered(user):
 
 
 def notify_admin_new_student_registration(user):
-    registration_date = user.created_at.strftime("%Y-%m-%d %H:%M UTC")
+    created_at = getattr(user, "created_at", None)
+    registration_date = (
+        created_at.strftime("%Y-%m-%d %H:%M UTC")
+        if created_at
+        else "Not available"
+    )
+
     admin_url = _absolute_url("admin.users")
+
     body = (
         "Hello Administrator,\n\n"
         "A new student has registered on Student Second-Hand Marketplace "
@@ -390,8 +400,15 @@ def notify_admin_new_student_registration(user):
         "Regards,\n"
         "Student Second-Hand Marketplace System\n"
     )
+
+    admin_email = (
+        current_app.config.get("ADMIN_NOTIFICATION_EMAIL")
+        or current_app.config.get("SUPPORT_EMAIL")
+        or current_app.config.get("MAIL_USERNAME")
+    )
+
     return _send_email(
-        current_app.config.get("ADMIN_NOTIFICATION_EMAIL"),
+        admin_email,
         "New Student Registration — Verification Required",
         body,
         f"new student registration user id {user.id}",
@@ -401,6 +418,7 @@ def notify_admin_new_student_registration(user):
 def notify_student_account_verified(user):
     student_name = " ".join((user.name or "").split()) or "there"
     marketplace_url = _absolute_url("products.home")
+
     access_message = (
         "You can now access the marketplace and participate in the "
         "student community."
@@ -409,6 +427,7 @@ def notify_student_account_verified(user):
         "administrator must reactivate it before you can access the "
         "marketplace."
     )
+
     body = (
         f"Hello {student_name},\n\n"
         "Congratulations! Your Student Second-Hand Marketplace account "
@@ -428,6 +447,7 @@ def notify_student_account_verified(user):
         "Regards,\n"
         "Student Second-Hand Marketplace Team\n"
     )
+
     return _send_email(
         user.university_email,
         "Your Student Second-Hand Marketplace Account Has Been Verified!",

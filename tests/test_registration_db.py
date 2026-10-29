@@ -1,6 +1,5 @@
-import json
 import unittest
-from urllib.error import URLError
+import requests
 from unittest.mock import Mock, patch
 
 from app import create_app
@@ -11,11 +10,7 @@ from app.models import User
 class RegistrationDatabaseTests(unittest.TestCase):
     @staticmethod
     def _accepted_response():
-        response = Mock(status=200)
-        response.read.return_value = b'{"id":"email-test-id"}'
-        response.__enter__ = Mock(return_value=response)
-        response.__exit__ = Mock(return_value=False)
-        return response
+        return Mock(status_code=200)
 
     def setUp(self):
         self.app = create_app()
@@ -48,7 +43,7 @@ class RegistrationDatabaseTests(unittest.TestCase):
 
     def test_register_persists_user_to_same_root_marketplace_db(self):
         with patch(
-            "app.email_notifications.urlopen",
+            "app.email_notifications.requests.post",
             return_value=self._accepted_response(),
         ) as send:
             response = self.client.post(
@@ -68,11 +63,11 @@ class RegistrationDatabaseTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(send.call_count, 2)
-        student_payload = json.loads(send.call_args_list[0].args[0].data)
-        admin_payload = json.loads(send.call_args_list[1].args[0].data)
+        student_payload = send.call_args_list[0].kwargs["json"]
+        admin_payload = send.call_args_list[1].kwargs["json"]
         self.assertEqual(
-            send.call_args_list[0].args[0].get_header("Authorization"),
-            f"Bearer {self.app.config['RESEND_API_KEY']}",
+            send.call_args_list[0].kwargs["headers"]["Authorization"],
+            "Bearer re_test_key",
         )
         self.assertEqual(student_payload["to"], ["newstudent@klu.ac.in"])
         self.assertEqual(
@@ -118,7 +113,10 @@ class RegistrationDatabaseTests(unittest.TestCase):
             'password': 'StrongPass123',
             'confirm_password': 'StrongPass123',
         }
-        with patch("app.email_notifications.urlopen") as send:
+        with patch(
+            "app.email_notifications.requests.post",
+            return_value=self._accepted_response(),
+        ) as send:
             invalid = dict(registration_data, university_email="outside@example.test")
             failed = self.client.post('/register', data=invalid)
             self.assertEqual(failed.status_code, 200)
@@ -134,8 +132,8 @@ class RegistrationDatabaseTests(unittest.TestCase):
     def test_email_failure_does_not_undo_registration(self):
         with self.assertLogs("app", level="WARNING"):
             with patch(
-                "app.email_notifications.urlopen",
-                side_effect=URLError("private provider response"),
+                "app.email_notifications.requests.post",
+                side_effect=requests.ConnectionError("private provider response"),
             ) as send:
                 response = self.client.post(
                     '/register',

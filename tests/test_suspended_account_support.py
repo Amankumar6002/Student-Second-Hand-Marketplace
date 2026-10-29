@@ -1,7 +1,5 @@
-import json
-from io import BytesIO
 import unittest
-from urllib.error import HTTPError, URLError
+import requests
 from unittest.mock import Mock, patch
 
 from app import create_app
@@ -76,25 +74,21 @@ class SuspendedAccountSupportTests(unittest.TestCase):
 
     @staticmethod
     def _accepted_response():
-        response = Mock(status=200)
-        response.read.return_value = b'{"id":"email-test-id"}'
-        context = Mock()
-        context.__enter__ = Mock(return_value=response)
-        context.__exit__ = Mock(return_value=False)
-        return context
+        return Mock(status_code=200)
 
     def test_suspend_commits_then_emails_student_with_support_address(self):
         self._login_admin()
 
         with patch(
-            "app.email_notifications.urlopen",
+            "app.email_notifications.requests.post",
             return_value=self._accepted_response(),
         ) as send:
-            def assert_suspension_committed(request, timeout):
+            def assert_suspension_committed(url, **kwargs):
                 with self.app.app_context():
                     user = db.session.get(User, self.student_id)
                     self.assertFalse(user.is_active)
-                self.assertEqual(timeout, 8)
+                self.assertEqual(url, "https://api.resend.com/emails")
+                self.assertEqual(kwargs["timeout"], 8)
                 return self._accepted_response()
 
             send.side_effect = assert_suspension_committed
@@ -102,8 +96,8 @@ class SuspendedAccountSupportTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         send.assert_called_once()
-        request = send.call_args.args[0]
-        payload = json.loads(request.data)
+        request = send.call_args
+        payload = request.kwargs["json"]
         self.assertEqual(payload["to"], ["student@klu.ac.in"])
         self.assertEqual(payload["from"], "notifications@example.com")
         self.assertIn("Test Student", payload["text"])
@@ -118,7 +112,7 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         self._login_admin()
 
         with patch(
-            "app.email_notifications.urlopen",
+            "app.email_notifications.requests.post",
             return_value=self._accepted_response(),
         ) as send:
             first_response = self._moderate("suspend")
@@ -133,8 +127,8 @@ class SuspendedAccountSupportTests(unittest.TestCase):
 
         with self.assertLogs("app", level="WARNING") as captured_logs:
             with patch(
-                "app.email_notifications.urlopen",
-                side_effect=URLError("private provider response must not be logged"),
+                "app.email_notifications.requests.post",
+                side_effect=requests.ConnectionError("private provider response must not be logged"),
             ) as send:
                 response = self._moderate("suspend")
 
@@ -200,14 +194,15 @@ class SuspendedAccountSupportTests(unittest.TestCase):
 
         self._login_admin()
         with patch(
-            "app.email_notifications.urlopen",
+            "app.email_notifications.requests.post",
             return_value=self._accepted_response(),
         ) as send:
-            def assert_activation_committed(request, timeout):
+            def assert_activation_committed(url, **kwargs):
                 with self.app.app_context():
                     student = db.session.get(User, self.student_id)
                     self.assertTrue(student.is_active)
-                self.assertEqual(timeout, 8)
+                self.assertEqual(url, "https://api.resend.com/emails")
+                self.assertEqual(kwargs["timeout"], 8)
                 return self._accepted_response()
 
             send.side_effect = assert_activation_committed
@@ -215,14 +210,14 @@ class SuspendedAccountSupportTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         send.assert_called_once()
-        request = send.call_args.args[0]
-        payload = json.loads(request.data)
+        request = send.call_args
+        payload = request.kwargs["json"]
         self.assertEqual(
             payload["subject"],
             "Your Student Second-Hand Marketplace Account Has Been Reactivated",
         )
         self.assertEqual(payload["to"], ["student@klu.ac.in"])
-        self.assertEqual(request.get_header("Authorization"), "Bearer re_test_key")
+        self.assertEqual(request.kwargs["headers"]["Authorization"], "Bearer re_test_key")
         self.assertIn("Hello Test Student,", payload["text"])
         self.assertIn("reactivated by the administrator", payload["text"])
         self.assertIn("You can now log in again", payload["text"])
@@ -240,7 +235,7 @@ class SuspendedAccountSupportTests(unittest.TestCase):
 
     def test_reactivating_active_account_does_not_send_duplicate_email(self):
         self._login_admin()
-        with patch("app.email_notifications.urlopen") as send:
+        with patch("app.email_notifications.requests.post") as send:
             response = self._moderate("activate")
 
         self.assertEqual(response.status_code, 302)
@@ -255,14 +250,14 @@ class SuspendedAccountSupportTests(unittest.TestCase):
 
         self._login_admin()
         with patch(
-            "app.email_notifications.urlopen",
+            "app.email_notifications.requests.post",
             return_value=self._accepted_response(),
         ) as send:
             response = self._moderate("verify")
 
         self.assertEqual(response.status_code, 302)
         send.assert_called_once()
-        payload = json.loads(send.call_args.args[0].data)
+        payload = send.call_args.kwargs["json"]
         self.assertIn("Verified", payload["subject"])
         with self.app.app_context():
             student = db.session.get(User, self.student_id)
@@ -277,15 +272,15 @@ class SuspendedAccountSupportTests(unittest.TestCase):
 
         self._login_admin()
         with patch(
-            "app.email_notifications.urlopen",
+            "app.email_notifications.requests.post",
             return_value=self._accepted_response(),
         ) as send:
             response = self._moderate("verify")
 
         self.assertEqual(response.status_code, 302)
         send.assert_called_once()
-        request = send.call_args.args[0]
-        payload = json.loads(request.data)
+        request = send.call_args
+        payload = request.kwargs["json"]
         self.assertEqual(payload["to"], ["student@klu.ac.in"])
         self.assertEqual(
             payload["subject"],
@@ -312,7 +307,7 @@ class SuspendedAccountSupportTests(unittest.TestCase):
 
         self._login_admin()
         with patch(
-            "app.email_notifications.urlopen",
+            "app.email_notifications.requests.post",
             return_value=self._accepted_response(),
         ) as send:
             first = self._moderate("verify")
@@ -331,8 +326,8 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         self._login_admin()
         with self.assertLogs("app", level="WARNING"):
             with patch(
-                "app.email_notifications.urlopen",
-                side_effect=URLError("private provider response"),
+                "app.email_notifications.requests.post",
+                side_effect=requests.ConnectionError("private provider response"),
             ) as send:
                 response = self._moderate("verify")
 
@@ -361,13 +356,13 @@ class SuspendedAccountSupportTests(unittest.TestCase):
 
         self._login_admin()
         with patch(
-            "app.email_notifications.urlopen",
+            "app.email_notifications.requests.post",
             return_value=self._accepted_response(),
         ) as send:
             response = self._moderate("verify")
 
         self.assertEqual(response.status_code, 302)
-        payload = json.loads(send.call_args.args[0].data)
+        payload = send.call_args.kwargs["json"]
         self.assertIn("remains suspended", payload["text"])
         self.assertNotIn("You can now access the marketplace", payload["text"])
         with self.app.app_context():
@@ -384,8 +379,10 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         self._login_admin()
         with self.assertLogs("app", level="WARNING") as captured_logs:
             with patch(
-                "app.email_notifications.urlopen",
-                side_effect=TimeoutError("private provider response must not be logged"),
+                "app.email_notifications.requests.post",
+                side_effect=requests.Timeout(
+                    "private provider response must not be logged"
+                ),
             ) as send:
                 response = self._moderate("activate")
 
@@ -417,7 +414,7 @@ class SuspendedAccountSupportTests(unittest.TestCase):
             student.university_email = "not-an-email"
             db.session.commit()
 
-            with patch("app.email_notifications.urlopen") as send:
+            with patch("app.email_notifications.requests.post") as send:
                 self.assertFalse(notify_student_account_activated(student))
 
         send.assert_not_called()
@@ -437,7 +434,7 @@ class SuspendedAccountSupportTests(unittest.TestCase):
 
                 with self.app.app_context():
                     student = db.session.get(User, self.student_id)
-                    with patch("app.email_notifications.urlopen") as send:
+                    with patch("app.email_notifications.requests.post") as send:
                         self.assertFalse(
                             notify_student_account_activated(student)
                         )
@@ -454,15 +451,14 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         with self.app.app_context():
             student = db.session.get(User, self.student_id)
             with patch(
-                "app.email_notifications.urlopen",
+                "app.email_notifications.requests.post",
                 return_value=self._accepted_response(),
             ) as send:
                 self.assertTrue(notify_student_account_activated(student))
 
-        request = send.call_args.args[0]
-        payload = json.loads(request.data)
-        self.assertEqual(request.full_url, "https://api.resend.com/emails")
-        self.assertEqual(request.get_method(), "POST")
+        request = send.call_args
+        payload = request.kwargs["json"]
+        self.assertEqual(request.args[0], "https://api.resend.com/emails")
         self.assertEqual(payload["from"], "onboarding@resend.dev")
         self.assertEqual(payload["to"], ["delivered@resend.dev"])
         self.assertEqual(send.call_args.kwargs["timeout"], 8)
@@ -476,12 +472,12 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         with self.app.app_context():
             student = db.session.get(User, self.student_id)
             with patch(
-                "app.email_notifications.urlopen",
+                "app.email_notifications.requests.post",
                 return_value=self._accepted_response(),
             ) as send:
                 self.assertTrue(notify_student_account_activated(student))
 
-        payload = json.loads(send.call_args.args[0].data)
+        payload = send.call_args.kwargs["json"]
         self.assertEqual(payload["from"], "onboarding@resend.dev")
         self.assertEqual(payload["to"], ["marketplace-test@resend.dev"])
 
@@ -490,17 +486,19 @@ class SuspendedAccountSupportTests(unittest.TestCase):
             RESEND_TEST_MODE=True,
             RESEND_TEST_RECIPIENT="delivered@resend.dev",
             ADMIN_NOTIFICATION_EMAIL=None,
+            SUPPORT_EMAIL=None,
+            MAIL_USERNAME=None,
         )
 
         with self.app.test_request_context("/"):
             student = db.session.get(User, self.student_id)
             with patch(
-                "app.email_notifications.urlopen",
+                "app.email_notifications.requests.post",
                 return_value=self._accepted_response(),
             ) as send:
                 self.assertTrue(notify_admin_new_student_registration(student))
 
-        payload = json.loads(send.call_args.args[0].data)
+        payload = send.call_args.kwargs["json"]
         self.assertEqual(payload["from"], "onboarding@resend.dev")
         self.assertEqual(payload["to"], ["delivered@resend.dev"])
 
@@ -508,12 +506,14 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         self.app.config.update(
             RESEND_TEST_MODE=False,
             ADMIN_NOTIFICATION_EMAIL=None,
+            SUPPORT_EMAIL=None,
+            MAIL_USERNAME=None,
         )
 
         with self.app.test_request_context("/"):
             student = db.session.get(User, self.student_id)
             with self.assertLogs("app", level="WARNING") as logs:
-                with patch("app.email_notifications.urlopen") as send:
+                with patch("app.email_notifications.requests.post") as send:
                     self.assertFalse(
                         notify_admin_new_student_registration(student)
                     )
@@ -528,7 +528,7 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         )
         with self.app.app_context():
             student = db.session.get(User, self.student_id)
-            with patch("app.email_notifications.urlopen") as send:
+            with patch("app.email_notifications.requests.post") as send:
                 self.assertFalse(notify_student_account_activated(student))
 
         send.assert_not_called()
@@ -542,7 +542,7 @@ class SuspendedAccountSupportTests(unittest.TestCase):
                 RESEND_TEST_MODE=True,
                 RESEND_TEST_RECIPIENT="delivered@resend.dev",
             )
-            with patch("app.email_notifications.urlopen") as send:
+            with patch("app.email_notifications.requests.post") as send:
                 self.assertFalse(notify_student_account_activated(student))
 
         send.assert_not_called()
@@ -551,18 +551,21 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         self.app.config.update(
             RESEND_TEST_MODE=True,
             RESEND_TEST_RECIPIENT="delivered@resend.dev",
+            ADMIN_NOTIFICATION_EMAIL=None,
+            SUPPORT_EMAIL=None,
+            MAIL_USERNAME=None,
         )
         with self.app.test_request_context("/"):
             student = db.session.get(User, self.student_id)
             with patch(
-                "app.email_notifications.urlopen",
+                "app.email_notifications.requests.post",
                 return_value=self._accepted_response(),
             ) as send:
                 self.assertTrue(
                     notify_admin_new_student_registration(student)
                 )
 
-        payload = json.loads(send.call_args.args[0].data)
+        payload = send.call_args.kwargs["json"]
         self.assertEqual(payload["to"], ["delivered@resend.dev"])
         self.assertNotIn("student@klu.ac.in", payload["text"])
         self.assertIn("[redacted email]", payload["text"])
@@ -572,10 +575,8 @@ class SuspendedAccountSupportTests(unittest.TestCase):
             student = db.session.get(User, self.student_id)
             with self.assertLogs("app", level="WARNING") as logs:
                 with patch(
-                    "app.email_notifications.urlopen",
-                    side_effect=URLError(
-                        TimeoutError("private socket detail")
-                    ),
+                    "app.email_notifications.requests.post",
+                    side_effect=requests.Timeout("private socket detail"),
                 ):
                     self.assertFalse(
                         notify_student_account_activated(student)
@@ -601,17 +602,12 @@ class SuspendedAccountSupportTests(unittest.TestCase):
                             f"for recipient student@klu.ac.in; key re_test_key"
                         ),
                     }
-                    error = HTTPError(
-                        "https://api.resend.com/emails",
-                        status,
-                        "Rejected",
-                        None,
-                        BytesIO(json.dumps(error_detail).encode("utf-8")),
-                    )
+                    error = Mock(status_code=status)
+                    error.json.return_value = error_detail
                     with self.assertLogs("app", level="WARNING") as logs:
                         with patch(
-                            "app.email_notifications.urlopen",
-                            side_effect=error,
+                            "app.email_notifications.requests.post",
+                            return_value=error,
                         ):
                             self.assertFalse(
                                 notify_student_account_activated(student)
@@ -631,7 +627,7 @@ class SuspendedAccountSupportTests(unittest.TestCase):
 
         self._login_admin()
         with patch(
-            "app.email_notifications.urlopen",
+            "app.email_notifications.requests.post",
             return_value=self._accepted_response(),
         ):
             self._moderate("activate")
@@ -682,7 +678,7 @@ class SuspendedAccountSupportTests(unittest.TestCase):
             self.assertFalse(db.session.get(User, self.student_id).is_active)
 
         self._login_admin()
-        with patch("app.email_notifications.urlopen") as send:
+        with patch("app.email_notifications.requests.post") as send:
             unsupported = self._moderate("delete")
 
         self.assertEqual(unsupported.status_code, 400)

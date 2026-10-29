@@ -84,11 +84,7 @@ class GoogleAuthTests(unittest.TestCase):
 
     @staticmethod
     def accepted_email_response():
-        response = Mock(status=200)
-        response.read.return_value = b'{"id":"email-test-id"}'
-        response.__enter__ = Mock(return_value=response)
-        response.__exit__ = Mock(return_value=False)
-        return response
+        return Mock(status_code=200)
 
     def test_existing_email_password_login_and_registration_still_work(self):
         self.add_user()
@@ -191,7 +187,7 @@ class GoogleAuthTests(unittest.TestCase):
             "name": "New Google Student",
         }
         with patch(
-            "app.email_notifications.urlopen",
+            "app.email_notifications.requests.post",
             return_value=self.accepted_email_response(),
         ) as send:
             first_response = self.callback_with_profile(profile)
