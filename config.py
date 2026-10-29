@@ -34,10 +34,7 @@ class Config:
     MAIL_USERNAME = os.getenv("MAIL_USERNAME")
     MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
     MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", MAIL_USERNAME)
-    # Admin notifications prefer a dedicated address, then support, then mail.
-    ADMIN_NOTIFICATION_EMAIL = (
-        os.getenv("ADMIN_NOTIFICATION_EMAIL") or SUPPORT_EMAIL or MAIL_USERNAME
-    )
+    ADMIN_NOTIFICATION_EMAIL = os.getenv("ADMIN_NOTIFICATION_EMAIL")
     RESEND_API_KEY = os.getenv("RESEND_API_KEY")
     RESEND_FROM = os.getenv("RESEND_FROM")
     RESEND_TEST_MODE = (

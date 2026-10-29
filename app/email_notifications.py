@@ -22,28 +22,30 @@ def _absolute_url(endpoint, **values):
 
 
 def _send_email(recipient, subject, body, context):
-    if not isinstance(recipient, str) or not recipient.strip():
-        current_app.logger.warning(
-            "Email skipped for %s: recipient is missing", context
-        )
-        return False
-
-    try:
-        recipient = validate_email(
-            recipient.strip(),
-            check_deliverability=False,
-        ).normalized
-    except EmailNotValidError:
-        current_app.logger.warning(
-            "Email skipped for %s: recipient is invalid", context
-        )
-        return False
-
     api_key = current_app.config.get("RESEND_API_KEY")
     sender = current_app.config.get("RESEND_FROM")
     test_mode = (
         str(current_app.config.get("RESEND_TEST_MODE", False)).lower() == "true"
     )
+
+    if not isinstance(recipient, str) or not recipient.strip():
+        if not test_mode:
+            current_app.logger.warning(
+                "Email skipped for %s: recipient is missing", context
+            )
+            return False
+        recipient = None
+    else:
+        try:
+            recipient = validate_email(
+                recipient.strip(),
+                check_deliverability=False,
+            ).normalized
+        except EmailNotValidError:
+            current_app.logger.warning(
+                "Email skipped for %s: recipient is invalid", context
+            )
+            return False
 
     if (
         not isinstance(api_key, str)
@@ -61,14 +63,25 @@ def _send_email(recipient, subject, body, context):
         configured_test_recipient = current_app.config.get(
             "RESEND_TEST_RECIPIENT", RESEND_TEST_RECIPIENT
         )
-        if configured_test_recipient != RESEND_TEST_RECIPIENT:
+        try:
+            validated_test_recipient = validate_email(
+                configured_test_recipient,
+                check_deliverability=False,
+            ).normalized
+        except (EmailNotValidError, TypeError):
             current_app.logger.warning(
-                "Email skipped for %s: test mode only permits the Resend "
-                "documented test recipient",
+                "Email skipped for %s: RESEND_TEST_RECIPIENT is missing or invalid",
                 context,
             )
             return False
-        recipient = RESEND_TEST_RECIPIENT
+        if not validated_test_recipient.casefold().endswith("@resend.dev"):
+            current_app.logger.warning(
+                "Email skipped for %s: test recipient must use Resend's "
+                "resend.dev test domain",
+                context,
+            )
+            return False
+        recipient = validated_test_recipient
         sender = RESEND_TEST_SENDER
         body = re.sub(
             r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}",

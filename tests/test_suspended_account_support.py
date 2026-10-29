@@ -467,6 +467,60 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         self.assertEqual(payload["to"], ["delivered@resend.dev"])
         self.assertEqual(send.call_args.kwargs["timeout"], 8)
 
+    def test_test_mode_uses_configured_resend_test_recipient(self):
+        self.app.config.update(
+            RESEND_TEST_MODE=True,
+            RESEND_TEST_RECIPIENT="marketplace-test@resend.dev",
+        )
+
+        with self.app.app_context():
+            student = db.session.get(User, self.student_id)
+            with patch(
+                "app.email_notifications.urlopen",
+                return_value=self._accepted_response(),
+            ) as send:
+                self.assertTrue(notify_student_account_activated(student))
+
+        payload = json.loads(send.call_args.args[0].data)
+        self.assertEqual(payload["from"], "onboarding@resend.dev")
+        self.assertEqual(payload["to"], ["marketplace-test@resend.dev"])
+
+    def test_test_mode_sends_admin_notification_without_real_recipient(self):
+        self.app.config.update(
+            RESEND_TEST_MODE=True,
+            RESEND_TEST_RECIPIENT="delivered@resend.dev",
+            ADMIN_NOTIFICATION_EMAIL=None,
+        )
+
+        with self.app.test_request_context("/"):
+            student = db.session.get(User, self.student_id)
+            with patch(
+                "app.email_notifications.urlopen",
+                return_value=self._accepted_response(),
+            ) as send:
+                self.assertTrue(notify_admin_new_student_registration(student))
+
+        payload = json.loads(send.call_args.args[0].data)
+        self.assertEqual(payload["from"], "onboarding@resend.dev")
+        self.assertEqual(payload["to"], ["delivered@resend.dev"])
+
+    def test_missing_admin_recipient_skips_production_notification(self):
+        self.app.config.update(
+            RESEND_TEST_MODE=False,
+            ADMIN_NOTIFICATION_EMAIL=None,
+        )
+
+        with self.app.test_request_context("/"):
+            student = db.session.get(User, self.student_id)
+            with self.assertLogs("app", level="WARNING") as logs:
+                with patch("app.email_notifications.urlopen") as send:
+                    self.assertFalse(
+                        notify_admin_new_student_registration(student)
+                    )
+
+        send.assert_not_called()
+        self.assertIn("recipient is missing", "\n".join(logs.output))
+
     def test_test_mode_rejects_non_resend_recipient_override(self):
         self.app.config.update(
             RESEND_TEST_MODE=True,
@@ -474,6 +528,20 @@ class SuspendedAccountSupportTests(unittest.TestCase):
         )
         with self.app.app_context():
             student = db.session.get(User, self.student_id)
+            with patch("app.email_notifications.urlopen") as send:
+                self.assertFalse(notify_student_account_activated(student))
+
+        send.assert_not_called()
+
+    def test_test_mode_still_rejects_invalid_original_recipient(self):
+        with self.app.app_context():
+            student = db.session.get(User, self.student_id)
+            student.university_email = "not-an-email"
+            db.session.commit()
+            self.app.config.update(
+                RESEND_TEST_MODE=True,
+                RESEND_TEST_RECIPIENT="delivered@resend.dev",
+            )
             with patch("app.email_notifications.urlopen") as send:
                 self.assertFalse(notify_student_account_activated(student))
 
