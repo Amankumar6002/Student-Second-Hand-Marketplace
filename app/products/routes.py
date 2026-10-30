@@ -145,7 +145,7 @@ def browse():
     sort = request.args.get("sort", "newest")
     query = query.order_by(Product.price.asc() if sort == "low" else Product.price.desc() if sort == "high" else Product.created_at.desc())
     products = query.paginate(page=request.args.get("page", 1, type=int), per_page=9, error_out=False)
-    return render_template("products/browse.html", products=products, categories=Category.query.order_by(Category.name).all())
+    return render_template("products/browse.html", products=products, categories=Category.ordered())
 
 
 @products_bp.route("/product/<int:product_id>")
@@ -392,7 +392,7 @@ def create():
     if not current_user.is_verified:
         flash("Your account must be verified before you can list an item.", "warning")
         return redirect(url_for("products.home"))
-    categories = Category.query.order_by(Category.name).all()
+    categories = Category.ordered()
     if request.method == "POST":
         # Extract and validate form data
         title = request.form.get("title", "").strip()
@@ -497,7 +497,7 @@ def edit(product_id):
     product = Product.query.get_or_404(product_id)
     if product.seller_id != current_user.id and current_user.role != "admin":
         return render_template("error.html", code=403, message="You can only edit your own listings."), 403
-    categories = Category.query.order_by(Category.name).all()
+    categories = Category.ordered()
     if request.method == "POST":
         # Extract and validate form data
         title = request.form.get("title", "").strip()

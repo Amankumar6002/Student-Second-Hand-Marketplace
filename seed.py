@@ -1,13 +1,12 @@
 from app import create_app
+from app.category_defaults import DEFAULT_CATEGORY_NAMES
 from app.extensions import db
 from app.models import Category, Product, ProductImage, User, AdminProduct
 
 app = create_app()
 
-CATEGORIES = ["Electronics", "Books", "Furniture", "Clothing", "Accessories", "Bicycles", "Calculators", "Hostel Items", "Academic Materials", "Other", "Engineering Kits", "Sports Equipment", "Project Materials"]
-
 with app.app_context():
-    for name in CATEGORIES:
+    for name in DEFAULT_CATEGORY_NAMES:
         if not Category.query.filter_by(name=name).first():
             db.session.add(Category(name=name))
     admin = User.query.filter_by(university_email="admin@klu.ac.in").first()

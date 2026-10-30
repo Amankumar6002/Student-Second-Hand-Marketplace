@@ -1,0 +1,48 @@
+select:not(:disabled),
+button:not(:disabled):not(.disabled),
+input[type="button"]:not(:disabled),
+input[type="submit"]:not(:disabled),
+input[type="reset"]:not(:disabled),
+input[type="file"]:not(:disabled),
+input[type="color"]:not(:disabled),
+input[type="range"]:not(:disabled),
+input[type="date"]:not(:disabled),
+input[type="datetime-local"]:not(:disabled),
+input[type="month"]:not(:disabled),
+input[type="week"]:not(:disabled),
+input[type="time"]:not(:disabled),
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled),
+input[type="image"]:not(:disabled),
+summary,
+a[href]:not([aria-disabled="true"]):not(.disabled),
+[role="button"]:not([aria-disabled="true"]):not(.disabled),
+.form-check-label {
+  cursor: pointer;
+}
+
+input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="date"]):not([type="datetime-local"]):not([type="month"]):not([type="week"]):not([type="time"]):not([type="image"]):not(:disabled),
+textarea:not(:disabled),
+[contenteditable="true"] {
+  cursor: text;
+}
+
+:disabled,
+.disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+label:has(:disabled),
+label:has([aria-disabled="true"]) {
+  cursor: not-allowed;
+}
+
+body :is(a[href], button, input:not([type="hidden"]), select, textarea, summary, [role="button"]):focus-visible {
+  outline: 3px solid #b93420;
+  outline-offset: 2px;
+}
+
+input[type="file"]:not(:disabled)::file-selector-button {
+  cursor: pointer;
+}

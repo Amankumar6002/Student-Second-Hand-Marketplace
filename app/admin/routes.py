@@ -243,7 +243,7 @@ def categories():
     if request.method == "POST" and request.form.get("name"):
         db.session.add(Category(name=request.form["name"].strip(), description=request.form.get("description", "").strip()))
         db.session.commit(); flash("Category added.", "success")
-    return render_template("admin/categories.html", categories=Category.query.order_by(Category.name).all())
+    return render_template("admin/categories.html", categories=Category.ordered())
 
 
 @admin_bp.route("/earnings")

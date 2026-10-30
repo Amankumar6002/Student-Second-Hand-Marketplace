@@ -6,6 +6,7 @@ from flask_login import current_user
 from sqlalchemy import event
 
 from config import Config
+from .category_defaults import DEFAULT_CATEGORY_NAMES
 from .extensions import csrf, db, login_manager, mail
 from .models import Category, User
 
@@ -80,6 +81,18 @@ def ensure_database_schema():
     db.session.commit()
 
 
+def seed_default_categories():
+    existing_names = {name for (name,) in db.session.query(Category.name).all()}
+    missing_categories = [
+        Category(name=name)
+        for name in DEFAULT_CATEGORY_NAMES
+        if name not in existing_names
+    ]
+    if missing_categories:
+        db.session.add_all(missing_categories)
+        db.session.commit()
+
+
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
@@ -133,7 +146,7 @@ def create_app(config_class=Config):
 
     @app.context_processor
     def inject_globals():
-        categories = Category.query.order_by(Category.name).all()
+        categories = Category.ordered()
         return {"nav_categories": categories, "current_user": current_user}
 
     @app.errorhandler(400)
@@ -159,6 +172,7 @@ def create_app(config_class=Config):
         ensure_database_schema()
         db.create_all()
         ensure_database_schema()
+        seed_default_categories()
         if not app.config.get("TESTING"):
             seed_default_admin()
 

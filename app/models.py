@@ -43,6 +43,14 @@ class Category(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     products = db.relationship("Product", back_populates="category")
 
+    @property
+    def display_name(self):
+        return "Others" if self.name == "Other" else self.name
+
+    @classmethod
+    def ordered(cls):
+        return cls.query.order_by(cls.name == "Other", cls.name).all()
+
 
 class Product(db.Model):
     __tablename__ = "products"

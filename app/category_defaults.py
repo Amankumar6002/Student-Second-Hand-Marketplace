@@ -1,0 +1,16 @@
+DEFAULT_CATEGORY_NAMES = (
+    "Books",
+    "Electronics",
+    "Engineering Kits",
+    "Calculators",
+    "Lab Equipment",
+    "Furniture",
+    "Accessories",
+    "Clothing",
+    "Bicycles",
+    "Hostel Items",
+    "Academic Materials",
+    "Other",
+    "Sports Equipment",
+    "Project Materials",
+)
