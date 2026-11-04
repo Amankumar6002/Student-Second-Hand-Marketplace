@@ -7,11 +7,16 @@ from PIL import Image
 from app import create_app
 from app.extensions import db
 from app.models import AdminProduct, User
+from config import Config
 
 
 class KluStoreImageUploadTests(unittest.TestCase):
+    class TestConfig(Config):
+        TESTING = True
+        SQLALCHEMY_DATABASE_URI = "sqlite://"
+
     def setUp(self):
-        self.app = create_app()
+        self.app = create_app(self.TestConfig)
         self.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
         self.client = self.app.test_client()
 
@@ -31,6 +36,15 @@ class KluStoreImageUploadTests(unittest.TestCase):
             admin.set_password('ChangeMe123!')
             db.session.add(admin)
             db.session.commit()
+
+    def tearDown(self):
+        if hasattr(self, "uploaded_image_path") and os.path.exists(
+            self.uploaded_image_path
+        ):
+            os.remove(self.uploaded_image_path)
+        with self.app.app_context():
+            db.session.remove()
+            db.engine.dispose()
 
     def test_admin_store_upload_saves_to_static_uploads_and_serves_url(self):
         with self.app.app_context():
@@ -65,6 +79,7 @@ class KluStoreImageUploadTests(unittest.TestCase):
                 self.assertTrue(product.image_path.startswith('uploads/'))
                 self.assertIn('upload-check', product.image_path)
                 full_path = os.path.join(self.app.config['UPLOAD_FOLDER'], product.image_path.replace('uploads/', ''))
+                self.uploaded_image_path = full_path
                 self.assertTrue(os.path.exists(full_path))
                 self.assertTrue(product.image_url.startswith('/static/uploads/'))
                 static_response = self.client.get(product.image_url)

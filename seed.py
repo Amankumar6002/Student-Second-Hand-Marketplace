@@ -9,11 +9,6 @@ with app.app_context():
     for name in DEFAULT_CATEGORY_NAMES:
         if not Category.query.filter_by(name=name).first():
             db.session.add(Category(name=name))
-    admin = User.query.filter_by(university_email="admin@klu.ac.in").first()
-    if not admin:
-        admin = User(name="Marketplace Admin", registration_number="ADMIN-001", university_email="admin@klu.ac.in", department="Administration", section="A", role="admin", is_verified=True)
-        admin.set_password("ChangeMe123!")
-        db.session.add(admin)
     db.session.commit()
     demo_sellers = {}
     for name, registration_number in [("Arun Raj", "DEMO-001"), ("Siva Kumar", "DEMO-002"), ("Naveen Prakash", "DEMO-003"), ("Manoj Jay", "DEMO-004")]:
@@ -86,4 +81,4 @@ with app.app_context():
         
         db.session.commit()
         print(f"✅ Seeded {len(admin_products)} KLU Store products!")
-    print("Seed complete. Development admin: admin@klu.ac.in / ChangeMe123!")
+    print("Seed complete.")

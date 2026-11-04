@@ -5,11 +5,16 @@ import re
 from app import create_app
 from app.extensions import db
 from app.models import Category, Order, Product, User, ProductReview, UserReview
+from config import Config
 
 
 class ReviewWorkflowTests(unittest.TestCase):
+    class TestConfig(Config):
+        TESTING = True
+        SQLALCHEMY_DATABASE_URI = "sqlite://"
+
     def setUp(self):
-        self.app = create_app()
+        self.app = create_app(self.TestConfig)
         self.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
         self.client = self.app.test_client()
 
@@ -80,6 +85,11 @@ class ReviewWorkflowTests(unittest.TestCase):
             self.product_id = self.product.id
             self.seller_id = self.seller.id
             self.buyer_id = self.buyer.id
+
+    def tearDown(self):
+        with self.app.app_context():
+            db.session.remove()
+            db.engine.dispose()
 
     def login_as(self, user):
         user_id = user.id if hasattr(user, "id") else int(user)

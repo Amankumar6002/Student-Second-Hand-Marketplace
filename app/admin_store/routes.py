@@ -7,6 +7,7 @@ from flask import Blueprint, current_app, flash, redirect, render_template, requ
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
+from ..auth.routes import active_required
 from ..extensions import db
 from ..models import AdminProduct, Order, ProductReview
 
@@ -15,7 +16,7 @@ admin_store_bp = Blueprint("admin_store", __name__, url_prefix="/klu-store")
 
 def admin_only(view):
     @wraps(view)
-    @login_required
+    @active_required
     def wrapped(*args, **kwargs):
         if current_user.role != "admin":
             return render_template("error.html", code=403, message="Admin access is required."), 403

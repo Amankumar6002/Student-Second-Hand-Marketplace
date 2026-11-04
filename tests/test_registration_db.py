@@ -5,15 +5,20 @@ from unittest.mock import Mock, patch
 from app import create_app
 from app.extensions import db
 from app.models import User
+from config import Config
 
 
 class RegistrationDatabaseTests(unittest.TestCase):
+    class TestConfig(Config):
+        TESTING = True
+        SQLALCHEMY_DATABASE_URI = "sqlite://"
+
     @staticmethod
     def _accepted_response():
         return Mock(status_code=200)
 
     def setUp(self):
-        self.app = create_app()
+        self.app = create_app(self.TestConfig)
         self.app.config.update(
             TESTING=True,
             WTF_CSRF_ENABLED=False,
@@ -41,7 +46,12 @@ class RegistrationDatabaseTests(unittest.TestCase):
             db.session.add(admin)
             db.session.commit()
 
-    def test_register_persists_user_to_same_root_marketplace_db(self):
+    def tearDown(self):
+        with self.app.app_context():
+            db.session.remove()
+            db.engine.dispose()
+
+    def test_register_persists_user_to_the_test_database(self):
         with patch(
             "app.email_notifications.requests.post",
             return_value=self._accepted_response(),
@@ -100,7 +110,7 @@ class RegistrationDatabaseTests(unittest.TestCase):
             self.assertTrue(user.is_active)
             self.assertIsNotNone(user.password_hash)
             self.assertNotEqual(user.password_hash, 'StrongPass123')
-            self.assertEqual(self.app.config['SQLALCHEMY_DATABASE_URI'].split('sqlite:///')[-1], 'C:/Users/vikas/Student Second Hand/marketplace.db')
+            self.assertEqual(self.app.config["SQLALCHEMY_DATABASE_URI"], "sqlite://")
 
     def test_failed_registration_does_not_send_registration_notifications(self):
         registration_data = {

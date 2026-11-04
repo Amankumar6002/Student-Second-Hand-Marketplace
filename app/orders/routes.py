@@ -4,6 +4,7 @@ from functools import wraps
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
+from ..auth.routes import active_required
 from ..extensions import db
 from ..models import Order, Product, AdminProduct, Payment, User
 
@@ -22,7 +23,7 @@ def buyer_required(view):
 
 def admin_only(view):
     @wraps(view)
-    @login_required
+    @active_required
     def wrapped(*args, **kwargs):
         if current_user.role != "admin":
             return render_template("error.html", code=403, message="Admin access is required."), 403

@@ -10,8 +10,8 @@ A university-exclusive second-hand marketplace for Kalasalingam University stude
 - Secure multi-image uploads with extension validation and generated filenames
 - Buy request workflow, rental requests with overlap prevention, wishlist, reports, direct messaging, and rental history
 - Separate admin console for user verification/suspension, listing approval/rejection, reports, and categories
-- Seed categories and development admin account
-- SQLite fallback for quick local development; MySQL is supported through `DATABASE_URL`
+- Seed categories and an optional environment-configured admin account
+- SQLite fallback for local development; PostgreSQL and MySQL URLs can be supplied through `DATABASE_URL`
 
 ## Setup
 
@@ -22,13 +22,9 @@ pip install -r requirements.txt
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-Create the MySQL database:
+Local development uses `marketplace.db` by default. For PostgreSQL, set `DATABASE_URL` to the database URL supplied by your provider. Legacy Render URLs beginning with `postgres://` are normalized to `postgresql://`. Never commit production credentials.
 
-```sql
-CREATE DATABASE kalasalingam_marketplace CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-
-Update `.env` with a random `SECRET_KEY`, MySQL connection string, and the university email domain. The default domain is `klu.ac.in`; adjust it if the university uses another configured domain.
+Set `SECRET_KEY` to a long, random value and configure the university email domain. The default domain is `klu.ac.in`; adjust it if the university uses another configured domain.
 
 For Google sign-in, set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`. Configure the Google OAuth web client with the authorized origin `http://127.0.0.1:5000` and redirect URI `http://127.0.0.1:5000/login/google/callback`. Google-created accounts are regular student accounts and remain subject to the existing administrator verification process.
 
@@ -38,10 +34,9 @@ Set `ADMIN_NOTIFICATION_EMAIL` to the administrator inbox. If it is unset, produ
 
 Successful student registration sends a welcome email and an administrator verification notice. Admin verification sends a separate account-verification email; account verification remains distinct from activation and suspension. Notification failures are logged and do not roll back account changes. Set `PUBLIC_BASE_URL` to the canonical HTTPS application origin when deploying; it is used to generate marketplace links.
 
-Run the seed script and app:
+Run the app:
 
 ```powershell
-python seed.py
 python run.py
 ```
 
@@ -49,12 +44,16 @@ Visit `http://127.0.0.1:5000`.
 
 ## Development account
 
-The seed script creates `admin@klu.ac.in` with password `ChangeMe123!`. This is for local development only. Change it immediately before any deployment. Students must register with a valid configured university email and are verified by an admin before publishing listings.
+At startup, `admin@klu.ac.in` is created only when `DEFAULT_ADMIN_PASSWORD` is set and that account does not already exist. Existing accounts and passwords are left unchanged. Set the variable in `.env` for local development; do not use a committed or shared password. Students must register with a valid configured university email and are verified by an admin before publishing listings.
 
 ## Project structure
 
 `app/__init__.py` creates the app and extensions. `app/models.py` contains normalized SQLAlchemy models. Auth, product, rental, messaging, and admin behavior live in Flask blueprints under `app/`. Templates and assets are in `app/templates` and `app/static`.
 
-## Production notes
+## Render and production notes
 
-Use MySQL, a strong secret from a secret manager, HTTPS, a production WSGI server, database migrations, backups, and object storage for images. The included SQLite fallback is intended for development smoke tests only.
+For the Render web service, set `DATABASE_URL` to the PostgreSQL **Internal Database URL** from the database dashboard. Also configure `SECRET_KEY`, `DEFAULT_ADMIN_PASSWORD`, and `PUBLIC_BASE_URL` (the canonical HTTPS service URL). If Google sign-in is enabled, set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and update the OAuth redirect URI to the production callback. For email, configure `RESEND_API_KEY`, `RESEND_FROM`, and `ADMIN_NOTIFICATION_EMAIL`; optionally set `SUPPORT_EMAIL` and `UNIVERSITY_EMAIL_DOMAIN`. Enter secrets in Render's environment settings, not in source files or chat.
+
+Startup creates missing tables and contains compatibility additions for selected older columns; it is not a general schema migration system. `db.create_all()` does not migrate all changed model definitions. Use Flask-Migrate/Alembic for future schema changes, and take a verified database backup before migrations. No data is transferred from a local or deployed SQLite database by changing `DATABASE_URL`.
+
+Render's local filesystem is not durable by default. Listing and store images are currently written under the app's local uploads directory, so they may disappear after a restart or redeploy. Keep the existing upload flow for now, but plan persistent object storage before relying on uploaded images in production; no storage provider is configured by this project.

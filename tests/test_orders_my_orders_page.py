@@ -3,11 +3,16 @@ import unittest
 from app import create_app
 from app.extensions import db
 from app.models import Category, Order, Product, User
+from config import Config
 
 
 class MyOrdersPageTests(unittest.TestCase):
+    class TestConfig(Config):
+        TESTING = True
+        SQLALCHEMY_DATABASE_URI = "sqlite://"
+
     def setUp(self):
-        self.app = create_app()
+        self.app = create_app(self.TestConfig)
         self.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
         self.client = self.app.test_client()
 
@@ -84,6 +89,11 @@ class MyOrdersPageTests(unittest.TestCase):
 
             self.buyer_email = buyer.university_email
             self.buyer_password = 'StrongPass123'
+
+    def tearDown(self):
+        with self.app.app_context():
+            db.session.remove()
+            db.engine.dispose()
 
     def test_my_orders_page_renders_for_cod_orders(self):
         login_response = self.client.post(

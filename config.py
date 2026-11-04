@@ -1,4 +1,5 @@
 import os
+import secrets
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -8,14 +9,30 @@ DB_PATH = (BASE_DIR / "marketplace.db").resolve()
 
 load_dotenv(dotenv_path=BASE_DIR / ".env", override=False)
 
+database_url = os.getenv("DATABASE_URL")
+
+if database_url:
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace(
+            "postgres://", "postgresql+psycopg2://", 1
+        )
+    elif database_url.startswith("postgresql://"):
+        database_url = database_url.replace(
+            "postgresql://", "postgresql+psycopg2://", 1
+        )
 
 class Config:
-    SECRET_KEY = os.getenv("SECRET_KEY", "development-only-change-me")
+    IS_PRODUCTION = (
+        os.getenv("RENDER", "").strip().lower() == "true"
+        or os.getenv("FLASK_ENV", "").strip().lower() == "production"
+        or os.getenv("APP_ENV", "").strip().lower() == "production"
+    )
+    SECRET_KEY = os.getenv("SECRET_KEY") or (
+        None if IS_PRODUCTION else secrets.token_hex(32)
+    )
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
-    SQLALCHEMY_DATABASE_URI = os.getenv(
-        "DATABASE_URL", f"sqlite:///{DB_PATH.as_posix()}"
-    )
+    SQLALCHEMY_DATABASE_URI = database_url or f"sqlite:///{DB_PATH.as_posix()}"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", 5 * 1024 * 1024))
     UNIVERSITY_EMAIL_DOMAIN = os.getenv("UNIVERSITY_EMAIL_DOMAIN", "klu.ac.in")

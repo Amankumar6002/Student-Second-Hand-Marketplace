@@ -3,7 +3,6 @@ import os
 from authlib.integrations.flask_client import OAuth
 from flask import Flask, current_app, render_template
 from flask_login import current_user
-from sqlalchemy import event
 
 from config import Config
 from .category_defaults import DEFAULT_CATEGORY_NAMES
@@ -19,6 +18,13 @@ def seed_default_admin(*args, **kwargs):
     if admin:
         return admin
 
+    admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD")
+    if not admin_password:
+        current_app.logger.warning(
+            "DEFAULT_ADMIN_PASSWORD is not set; skipping default admin creation."
+        )
+        return None
+
     admin = User(
         name="Marketplace Admin",
         registration_number="ADMIN-001",
@@ -29,7 +35,7 @@ def seed_default_admin(*args, **kwargs):
         is_verified=True,
         is_active=True,
     )
-    admin.set_password("ChangeMe123!")
+    admin.set_password(admin_password)
     db.session.add(admin)
     db.session.commit()
     return admin
@@ -63,7 +69,7 @@ def ensure_database_schema():
         for column_name, column_sql in {
             "payment_status": "VARCHAR(30) DEFAULT 'pending' NOT NULL",
             "currency": "VARCHAR(10) DEFAULT 'INR' NOT NULL",
-            "paid_at": "DATETIME",
+            "paid_at": "TIMESTAMP",
         }.items():
             if column_name not in order_columns:
                 db.session.execute(text(f"ALTER TABLE orders ADD COLUMN {column_name} {column_sql}"))
@@ -73,7 +79,7 @@ def ensure_database_schema():
         for column_name, column_sql in {
             "payment_status": "VARCHAR(20) DEFAULT 'pending' NOT NULL",
             "currency": "VARCHAR(10) DEFAULT 'INR' NOT NULL",
-            "paid_at": "DATETIME",
+            "paid_at": "TIMESTAMP",
         }.items():
             if column_name not in payment_columns:
                 db.session.execute(text(f"ALTER TABLE payments ADD COLUMN {column_name} {column_sql}"))
@@ -96,6 +102,19 @@ def seed_default_categories():
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
+    secret_key = app.config.get("SECRET_KEY")
+    is_production = (
+        app.config.get("IS_PRODUCTION")
+        or app.config.get("ENV") == "production"
+    )
+    if is_production and (
+        not isinstance(secret_key, str)
+        or len(secret_key) < 32
+        or secret_key == "development-only-change-me"
+    ):
+        raise RuntimeError(
+            "SECRET_KEY must be configured with at least 32 characters in production."
+        )
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
     db.init_app(app)
     login_manager.init_app(app)
@@ -166,12 +185,9 @@ def create_app(config_class=Config):
         db.session.rollback()
         return render_template("error.html", code=500, message="Something went wrong on our side."), 500
 
-    event.listen(db.metadata, "after_create", seed_default_admin)
-
     with app.app_context():
         ensure_database_schema()
         db.create_all()
-        ensure_database_schema()
         seed_default_categories()
         if not app.config.get("TESTING"):
             seed_default_admin()
